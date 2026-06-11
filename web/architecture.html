@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vision RAG · 架构总览</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #0a0e1a;
+    --bg-card: #131a2e;
+    --bg-elev: #1c2540;
+    --line: #2a3556;
+    --text: #e8edf7;
+    --text-dim: #8b96b8;
+    --accent-1: #6366f1;  /* indigo */
+    --accent-2: #06b6d4;  /* cyan */
+    --accent-3: #f59e0b;  /* amber */
+    --accent-4: #10b981;  /* emerald */
+    --accent-5: #ec4899;  /* pink */
+    --shadow: 0 12px 32px rgba(0,0,0,.4);
+  }
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+  body {
+    background-image:
+      radial-gradient(circle at 20% 10%, rgba(99,102,241,.12), transparent 40%),
+      radial-gradient(circle at 80% 60%, rgba(6,182,212,.10), transparent 40%);
+  }
+
+  /* ============ Hero ============ */
+  .hero {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    text-align: center;
+    position: relative;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(transparent 95%, rgba(99,102,241,.08) 95%),
+      linear-gradient(90deg, transparent 95%, rgba(99,102,241,.08) 95%);
+    background-size: 50px 50px;
+    mask: radial-gradient(circle at center, black 30%, transparent 70%);
+    z-index: 0;
+  }
+  .hero > * { position: relative; z-index: 1; }
+  .hero h1 {
+    font-size: clamp(40px, 7vw, 84px);
+    font-weight: 800;
+    letter-spacing: -2px;
+    background: linear-gradient(135deg, #6366f1 0%, #06b6d4 50%, #10b981 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 16px;
+    animation: gradientShift 8s ease infinite;
+    background-size: 200% 200%;
+  }
+  @keyframes gradientShift {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+  .hero .subtitle {
+    font-size: clamp(18px, 2.5vw, 26px);
+    color: var(--text-dim);
+    max-width: 760px;
+    margin: 0 auto 12px;
+  }
+  .hero .tag {
+    display: inline-block;
+    padding: 6px 16px;
+    background: rgba(99,102,241,.15);
+    border: 1px solid rgba(99,102,241,.4);
+    border-radius: 999px;
+    font-size: 14px;
+    color: #a5b4fc;
+    margin-top: 24px;
+  }
+  .scroll-hint {
+    position: absolute;
+    bottom: 32px;
+    color: var(--text-dim);
+    font-size: 14px;
+    animation: bounce 2s infinite;
+  }
+  @keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(8px); }
+  }
+
+  /* ============ Section ============ */
+  section {
+    padding: 80px 5%;
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+  h2 {
+    font-size: clamp(28px, 4vw, 42px);
+    font-weight: 700;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  h2 .num {
+    display: inline-flex;
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+    color: white;
+    font-size: 20px;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 20px rgba(99,102,241,.3);
+  }
+  .section-sub {
+    color: var(--text-dim);
+    font-size: 17px;
+    margin-bottom: 40px;
+    max-width: 760px;
+  }
+
+  /* ============ One-Liner Story ============ */
+  .story-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    margin-top: 32px;
+  }
+  .story-card {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 28px;
+    transition: all .3s;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+  .story-card::before {
+    content: '';
+    position: absolute;
+    top: -50%; left: -50%;
+    width: 200%; height: 200%;
+    background: conic-gradient(from 0deg, transparent, var(--card-color, var(--accent-1)), transparent 30%);
+    opacity: 0;
+    transition: opacity .4s;
+    animation: rotate 4s linear infinite;
+    animation-play-state: paused;
+  }
+  .story-card:hover::before {
+    opacity: .15;
+    animation-play-state: running;
+  }
+  .story-card > * { position: relative; z-index: 1; }
+  @keyframes rotate { to { transform: rotate(360deg); } }
+  .story-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--card-color, var(--accent-1));
+  }
+  .story-card .icon {
+    font-size: 36px;
+    margin-bottom: 16px;
+  }
+  .story-card h3 {
+    font-size: 20px;
+    margin-bottom: 8px;
+    color: var(--card-color, var(--accent-1));
+  }
+  .story-card p {
+    color: var(--text-dim);
+    font-size: 15px;
+  }
+
+  /* ============ Pipeline Visualization ============ */
+  .pipeline {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    padding: 40px;
+    margin-top: 32px;
+    overflow: hidden;
+  }
+  .pipeline-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+  }
+  .pipeline-tab {
+    padding: 10px 20px;
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all .25s;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .pipeline-tab.active {
+    background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+    color: white;
+    border-color: transparent;
+    box-shadow: 0 4px 12px rgba(99,102,241,.3);
+  }
+  .pipeline-flow {
+    display: flex;
+    align-items: stretch;
+    gap: 16px;
+    overflow-x: auto;
+    padding: 8px 0 16px;
+    scrollbar-width: thin;
+  }
+  .flow-step {
+    flex: 1 1 0;
+    min-width: 200px;
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 24px;
+    position: relative;
+    transition: all .3s;
+    cursor: pointer;
+  }
+  .flow-step:hover {
+    border-color: var(--step-color, var(--accent-1));
+    transform: translateY(-3px);
+  }
+  .flow-step::after {
+    content: '→';
+    position: absolute;
+    right: -22px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-dim);
+    font-size: 24px;
+    z-index: 2;
+  }
+  .flow-step:last-child::after { display: none; }
+  .flow-step .num {
+    display: inline-block;
+    width: 28px; height: 28px;
+    background: var(--step-color, var(--accent-1));
+    color: white;
+    border-radius: 8px;
+    text-align: center;
+    line-height: 28px;
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+  .flow-step h4 {
+    font-size: 16px;
+    margin-bottom: 6px;
+  }
+  .flow-step p {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+  .flow-step .meta {
+    font-size: 12px;
+    color: var(--step-color, var(--accent-1));
+    font-family: 'SF Mono', monospace;
+  }
+
+  /* ============ Tech Stack ============ */
+  .tech-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+    margin-top: 32px;
+  }
+  .tech-card {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 20px;
+    transition: all .25s;
+  }
+  .tech-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent-2);
+    box-shadow: 0 8px 20px rgba(6,182,212,.15);
+  }
+  .tech-card .role {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .tech-card h4 {
+    font-size: 17px;
+    margin-bottom: 6px;
+    color: var(--text);
+    word-break: break-word;
+  }
+  .tech-card .desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+  }
+  .tech-card .badges {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .badge {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: rgba(99,102,241,.15);
+    color: #a5b4fc;
+    font-family: 'SF Mono', monospace;
+  }
+
+  /* ============ Designs ============ */
+  .design-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 20px;
+    margin-top: 32px;
+  }
+  .design-card {
+    background: linear-gradient(135deg, var(--bg-card), var(--bg-elev));
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 28px;
+    position: relative;
+    transition: all .3s;
+  }
+  .design-card:hover {
+    border-color: var(--card-color);
+    transform: translateY(-3px);
+  }
+  .design-card .label {
+    display: inline-block;
+    font-size: 11px;
+    padding: 4px 10px;
+    background: var(--card-color);
+    color: white;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    font-weight: 600;
+    letter-spacing: .5px;
+  }
+  .design-card h3 {
+    font-size: 22px;
+    margin-bottom: 12px;
+  }
+  .design-card .principle {
+    color: var(--card-color);
+    font-style: italic;
+    margin: 12px 0;
+    padding-left: 14px;
+    border-left: 3px solid var(--card-color);
+    font-size: 14px;
+  }
+  .design-card .body { color: var(--text-dim); font-size: 14px; }
+
+  /* ============ Number Cards ============ */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-top: 32px;
+  }
+  .stat {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+  }
+  .stat .num {
+    font-size: 36px;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--accent-1), var(--accent-3));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .stat .lbl {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-top: 4px;
+  }
+
+  /* ============ Glossary ============ */
+  .glossary {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 8px;
+    margin-top: 32px;
+  }
+  details {
+    border-bottom: 1px solid var(--line);
+    padding: 16px 20px;
+    cursor: pointer;
+  }
+  details:last-child { border-bottom: none; }
+  summary {
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 600;
+    color: var(--text);
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::after {
+    content: '+';
+    color: var(--accent-2);
+    font-size: 22px;
+    transition: transform .25s;
+  }
+  details[open] summary::after {
+    content: '−';
+  }
+  details p {
+    margin-top: 12px;
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+  .term {
+    display: inline-block;
+    padding: 1px 6px;
+    background: rgba(6,182,212,.12);
+    color: #67e8f9;
+    border-radius: 4px;
+    font-family: 'SF Mono', monospace;
+    font-size: 13px;
+  }
+
+  /* ============ Demo Simulator ============ */
+  .demo {
+    background: linear-gradient(135deg, #1e293b, #0f172a);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 32px;
+    margin-top: 32px;
+  }
+  .demo-controls {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .demo-controls label {
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+  .demo-controls select, .demo-controls button {
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .demo-controls button {
+    background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+    border: none;
+    font-weight: 600;
+    transition: transform .15s;
+  }
+  .demo-controls button:hover { transform: scale(1.05); }
+  .demo-controls button:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+    transform: none;
+  }
+  .demo-stage {
+    background: var(--bg);
+    border-radius: 12px;
+    padding: 20px;
+    min-height: 300px;
+    font-family: 'SF Mono', monospace;
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.8;
+    white-space: pre-wrap;
+    overflow-y: auto;
+    max-height: 400px;
+  }
+  .demo-stage .ok { color: var(--accent-4); }
+  .demo-stage .info { color: var(--accent-2); }
+  .demo-stage .warn { color: var(--accent-3); }
+  .demo-stage .step { color: var(--accent-1); font-weight: 600; }
+
+  footer {
+    text-align: center;
+    padding: 60px 20px 40px;
+    color: var(--text-dim);
+    font-size: 13px;
+    border-top: 1px solid var(--line);
+    margin-top: 60px;
+  }
+  footer a {
+    color: var(--accent-2);
+    text-decoration: none;
+  }
+
+  /* ============ Reveal Animation ============ */
+  .reveal {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity .6s, transform .6s;
+  }
+  .reveal.shown {
+    opacity: 1;
+    transform: translateY(0);
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ HERO ============ -->
+<section class="hero">
+  <h1>Vision RAG</h1>
+  <p class="subtitle">让 AI 看懂视频，从一堆素材里找出"高光时刻"。</p>
+  <p class="subtitle" style="font-size: 16px; opacity: .8;">就像给视频做了个"智能搜索引擎"，但搜的不是文字——是<b>画面</b>、<b>动作</b>、<b>情绪</b>。</p>
+  <span class="tag">基于 CLIP + Milvus + 多模态 LLM 构建</span>
+  <div class="scroll-hint">↓ 向下滚动了解</div>
+</section>
+
+<!-- ============ ① 一句话讲清 ============ -->
+<section class="reveal">
+  <h2><span class="num">1</span>这个项目在做什么？</h2>
+  <p class="section-sub">三个能力，一句话讲清。</p>
+  <div class="story-grid">
+    <div class="story-card" style="--card-color: #6366f1;">
+      <div class="icon">🔍</div>
+      <h3>视频搜索</h3>
+      <p>输入"一个人在跑步"，从你的视频库里找出所有出现过这个画面的片段，精确到秒。</p>
+    </div>
+    <div class="story-card" style="--card-color: #f59e0b;">
+      <div class="icon">⭐</div>
+      <h3>高光标注</h3>
+      <p>给系统几个"什么算高光"的样例，它就能从新视频里自动标出同类高光段。</p>
+    </div>
+    <div class="story-card" style="--card-color: #10b981;">
+      <div class="icon">🤖</div>
+      <h3>AI 自动归类</h3>
+      <p>不想准备样例？让 AI 直接看视频，自己找出哪些好、哪些类似、给每类起个名字。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ② 它是怎么做到的 ============ -->
+<section class="reveal">
+  <h2><span class="num">2</span>它是怎么做到的？</h2>
+  <p class="section-sub">点击下面的标签切换不同流程，每个步骤可以点开看细节。</p>
+
+  <div class="pipeline">
+    <div class="pipeline-tabs">
+      <div class="pipeline-tab active" data-flow="annotate">⭐ 高光标注流程</div>
+      <div class="pipeline-tab" data-flow="search">🔍 视频搜索流程</div>
+      <div class="pipeline-tab" data-flow="auto">🤖 AI 自动建库</div>
+    </div>
+
+    <div class="pipeline-flow" id="flow-container">
+      <!-- 动态填充 -->
+    </div>
+
+    <div style="margin-top: 20px; padding: 16px; background: rgba(99,102,241,.08); border-radius: 10px; border-left: 3px solid var(--accent-1);">
+      <strong style="color: var(--accent-1);">💡 类比理解：</strong>
+      <span style="color: var(--text-dim); font-size: 14px;" id="flow-analogy">
+        就像图书馆员对每本书做了"指纹"，你说要找哪类书，他能立刻翻出最像的几本——只不过这里是视频片段。
+      </span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ③ 关键设计 ============ -->
+<section class="reveal">
+  <h2><span class="num">3</span>关键设计（为什么这样做？）</h2>
+  <p class="section-sub">5 个工程取舍，每一个都是"踩过坑后的最优解"。</p>
+
+  <div class="design-grid">
+    <div class="design-card" style="--card-color: #6366f1;">
+      <span class="label">设计 1</span>
+      <h3>双门阈值</h3>
+      <div class="principle">既要"绝对像"，也要"在自己同类里特别突出"。</div>
+      <p class="body">单纯用 0.75 相似度卡死，会让"抽象类"标签全军覆没。引入 z-score 做相对阈值，跨标签自适应——这是抓住"显著异常高分"的核心抓手。</p>
+    </div>
+    <div class="design-card" style="--card-color: #06b6d4;">
+      <span class="label">设计 2</span>
+      <h3>帧级精修</h3>
+      <div class="principle">先粗后细：5s 候选段 → 1.2s 真正动作的几帧。</div>
+      <p class="body">第一遍按 5 秒切片找候选，第二遍在每个候选段内 4 帧/秒重新打分。粗的快、细的准，平衡速度和精度。</p>
+    </div>
+    <div class="design-card" style="--card-color: #f59e0b;">
+      <span class="label">设计 3</span>
+      <h3>客户级 KB 隔离</h3>
+      <div class="principle">每个客户一份独立"样例册"，互不干扰。</div>
+      <p class="body">同一个 Milvus collection 里靠 kb_id 字段做软隔离，省了多租户基础设施成本，又保住了数据边界。</p>
+    </div>
+    <div class="design-card" style="--card-color: #10b981;">
+      <span class="label">设计 4</span>
+      <h3>本地 + 云端混合 AI</h3>
+      <div class="principle">省钱的本地跑，不擅长的云端跑。</div>
+      <p class="body">视觉编码本地 MPS 跑（免费 + 快），复杂语义判断走阿里云 Qwen-VL（按 token 收费）。颗粒度对齐：常用功能不烧钱。</p>
+    </div>
+    <div class="design-card" style="--card-color: #ec4899;">
+      <span class="label">设计 5</span>
+      <h3>异步任务架构</h3>
+      <div class="principle">长任务后台跑，前端轮询查进度。</div>
+      <p class="body">单视频标注要 7-13 秒，HTTP 同步会超时。提交立即返回 task_id，后台线程处理，前端轮询拿结果——通用模式。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ④ 技术栈 ============ -->
+<section class="reveal">
+  <h2><span class="num">4</span>它由哪些"零件"组成？</h2>
+  <p class="section-sub">类比：每个零件都是一个有专长的"工人"。</p>
+
+  <div class="tech-grid">
+    <div class="tech-card">
+      <div class="role">🧠 视觉理解</div>
+      <h4>Chinese-CLIP-Large</h4>
+      <p class="desc">把图片/文字翻译成 768 个数字，方便比较"像不像"。</p>
+      <div class="badges"><span class="badge">1.51 GB</span><span class="badge">中文友好</span></div>
+    </div>
+    <div class="tech-card">
+      <div class="role">📦 向量仓库</div>
+      <h4>Milvus 2.4</h4>
+      <p class="desc">专门存"特征向量"的数据库，毫秒级找出相似的几百万条。</p>
+      <div class="badges"><span class="badge">单机</span><span class="badge">IVF_FLAT</span></div>
+    </div>
+    <div class="tech-card">
+      <div class="role">🎬 视频解码</div>
+      <h4>decord + opencv</h4>
+      <p class="desc">把 MP4 拆成一帧一帧。decord 是"高速版"，opencv 是兜底。</p>
+      <div class="badges"><span class="badge">3-5x faster</span></div>
+    </div>
+    <div class="tech-card">
+      <div class="role">🎯 场景检测</div>
+      <h4>PySceneDetect</h4>
+      <p class="desc">自动找出视频里"画面剧烈变化"的位置，作为切片硬边界。</p>
+      <div class="badges"><span class="badge">阈值 27</span></div>
+    </div>
+    <div class="tech-card">
+      <div class="role">🤖 多模态 AI</div>
+      <h4>Qwen2-VL-2B (MLX)</h4>
+      <p class="desc">能"看"图说话的小模型，用 Apple 芯片本地跑，量化省内存。</p>
+      <div class="badges"><span class="badge">2.5 GB</span><span class="badge">8-bit</span></div>
+    </div>
+    <div class="tech-card">
+      <div class="role">☁️ 云端 LLM</div>
+      <h4>Qwen3.5-Plus</h4>
+      <p class="desc">阿里云的视频理解大模型，吃视频 URL 直接吐高光描述。</p>
+      <div class="badges"><span class="badge">DashScope</span></div>
+    </div>
+    <div class="tech-card">
+      <div class="role">⚡ Web 服务</div>
+      <h4>FastAPI</h4>
+      <p class="desc">提供 HTTP API + 静态网页托管，Python 生态最快的选择。</p>
+      <div class="badges"><span class="badge">async</span><span class="badge">REST</span></div>
+    </div>
+    <div class="tech-card">
+      <div class="role">📊 聚类</div>
+      <h4>scikit-learn KMeans</h4>
+      <p class="desc">把相似的高光自动归到一起，K 取 √N（经验值）。</p>
+      <div class="badges"><span class="badge">无监督</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ⑤ 一些有趣的数字 ============ -->
+<section class="reveal">
+  <h2><span class="num">5</span>一些有趣的数字</h2>
+  <p class="section-sub">用真实测试数据，让你对项目"体量"有感知。</p>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="num">7-13<span style="font-size: 18px">s</span></div>
+      <div class="lbl">单视频标注耗时<br>（100 秒视频，M5 芯片）</div>
+    </div>
+    <div class="stat">
+      <div class="num">768</div>
+      <div class="lbl">视觉特征维度<br>（每帧浓缩成 768 个数）</div>
+    </div>
+    <div class="stat">
+      <div class="num">~40</div>
+      <div class="lbl">每个视频切片数<br>（5 秒 / 段）</div>
+    </div>
+    <div class="stat">
+      <div class="num">8</div>
+      <div class="lbl">每片段抽帧<br>（自适应运动量）</div>
+    </div>
+    <div class="stat">
+      <div class="num">50ms</div>
+      <div class="lbl">向量检索延迟<br>（Milvus ANN）</div>
+    </div>
+    <div class="stat">
+      <div class="num">3</div>
+      <div class="lbl">核心模块<br>（ingest / search / annotate）</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ⑥ 互动 demo ============ -->
+<section class="reveal">
+  <h2><span class="num">6</span>来一次模拟运行 ▶️</h2>
+  <p class="section-sub">点击"开始"，看 AI 是怎么从一段视频里找出高光的（这是模拟，无真实调用）。</p>
+
+  <div class="demo">
+    <div class="demo-controls">
+      <label>选个场景：</label>
+      <select id="demo-scene">
+        <option value="action">动作大片：找"打斗高光"</option>
+        <option value="drama">家庭剧：找"反转打脸"</option>
+        <option value="sport">体育：找"进球瞬间"</option>
+      </select>
+      <button id="demo-run">▶ 开始模拟</button>
+      <button id="demo-clear" style="background: var(--bg-elev); border: 1px solid var(--line);">清空</button>
+    </div>
+    <div class="demo-stage" id="demo-output">点击"开始模拟"启动一次完整的高光标注流程...</div>
+  </div>
+</section>
+
+<!-- ============ ⑦ 黑话词典 ============ -->
+<section class="reveal">
+  <h2><span class="num">7</span>黑话词典 📖</h2>
+  <p class="section-sub">遇到术语？点开看人话翻译。</p>
+
+  <div class="glossary">
+    <details>
+      <summary><span class="term">向量 / Embedding</span></summary>
+      <p>把图片或文字翻译成一串数字（比如 768 个），相似的内容数字也接近。计算机就靠这串数字理解"像不像"。</p>
+    </details>
+    <details>
+      <summary><span class="term">CLIP</span></summary>
+      <p>OpenAI 开源的"图文翻译模型"，给一张图能输出向量，给一句话也能输出向量——而且两边在同一个"语义空间"里，可以直接比较。</p>
+    </details>
+    <details>
+      <summary><span class="term">Milvus</span></summary>
+      <p>专门存向量的数据库。普通数据库找"name=张三"很快，但找"和这串数字最像的 10 条"会卡爆——Milvus 用了特殊算法（ANN）让这种查询毫秒级完成。</p>
+    </details>
+    <details>
+      <summary><span class="term">z-score</span></summary>
+      <p>用来回答"这个分数在自己同类里算不算特别高"。算法是：(我的分 - 同类平均分) ÷ 同类标准差。z=1 就是比平均高 1 个标准差，z=2 就是非常突出了。</p>
+    </details>
+    <details>
+      <summary><span class="term">RAG</span></summary>
+      <p>Retrieval Augmented Generation，"检索增强生成"。先从你的资料库里找相关的，再让 AI 基于这些资料回答——比直接问 AI 准确得多。本项目是"视频版 RAG"。</p>
+    </details>
+    <details>
+      <summary><span class="term">Reranker / 精排</span></summary>
+      <p>两段式检索的第二步。先用快但粗的方法找出候选 top-50（粗排），再用慢但准的方法重新打分选出 top-10（精排）。先快后准，平衡成本和质量。</p>
+    </details>
+    <details>
+      <summary><span class="term">MPS</span></summary>
+      <p>Metal Performance Shaders，苹果 M 系芯片的 GPU 加速接口。在 Mac 上跑深度学习，没有 NVIDIA CUDA 也能用 GPU 算力。</p>
+    </details>
+    <details>
+      <summary><span class="term">KB / 知识库</span></summary>
+      <p>本项目里指"高光样例册"——告诉系统什么算高光的一组带标签样例。每个客户一个 KB，互不干扰。</p>
+    </details>
+  </div>
+</section>
+
+<footer>
+  Vision RAG · 一个让 AI 看懂视频的开源项目<br>
+  <span style="opacity: .6;">详细技术文档见 <a href="HIGHLIGHT_FLOW.md">HIGHLIGHT_FLOW.md</a> · 启动: <code>bash scripts/start_native.sh</code></span>
+</footer>
+
+<script>
+  // ===== Reveal on scroll =====
+  const revealEls = document.querySelectorAll('.reveal');
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('shown');
+        io.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.1 });
+  revealEls.forEach(el => io.observe(el));
+
+  // ===== Pipeline tabs =====
+  const flows = {
+    annotate: {
+      analogy: '就像让一个看过 1000 部电影的影评人，给你的新视频画"哪些段精彩"的批注——他记得的那些"经典桥段"就是知识库。',
+      steps: [
+        { color: '#6366f1', title: '上传视频', desc: '用户上传一个新视频文件', meta: '50-500ms' },
+        { color: '#06b6d4', title: '切片', desc: '把视频按 5 秒一段切成 ~40 个小片', meta: '0.8-1.5s' },
+        { color: '#10b981', title: '编码', desc: '每片抽 8 帧，转成向量', meta: '3-6s' },
+        { color: '#f59e0b', title: 'KB 检索', desc: '每片去样例册找最像的 5 条', meta: '0.3-0.8s' },
+        { color: '#ec4899', title: '筛选合并', desc: '过双门阈值 + 拼接相邻段', meta: '<50ms' },
+        { color: '#6366f1', title: '帧级精修', desc: '把粗段切到秒级精确', meta: '1.5-4s' },
+        { color: '#10b981', title: '输出结果', desc: '返回每段高光的时间戳', meta: '0ms' },
+      ],
+    },
+    search: {
+      analogy: '就像 Google 图片搜索，但搜的对象是视频片段——你说一句话或给一张图，它返回最匹配的几段视频。',
+      steps: [
+        { color: '#6366f1', title: '输入查询', desc: '文字"一个人在跑步" 或 一张图', meta: '即时' },
+        { color: '#06b6d4', title: '编码查询', desc: 'CLIP 把它翻译成 768 维向量', meta: '20ms' },
+        { color: '#10b981', title: '粗排召回', desc: 'Milvus 在百万向量里找 top-50', meta: '50ms' },
+        { color: '#f59e0b', title: '精排打分', desc: 'CLIP 二次打分，选出最匹配的 10 段', meta: '500ms' },
+        { color: '#ec4899', title: '聚合相邻', desc: '把同一视频里的相邻片段合并', meta: '<10ms' },
+        { color: '#6366f1', title: '返回结果', desc: '视频片段 + 时间 + 缩略图', meta: '0ms' },
+      ],
+    },
+    auto: {
+      analogy: '就像一个实习生看完一堆视频后，自己整理出一份"高光分类手册"——不需要老板手把手教。',
+      steps: [
+        { color: '#6366f1', title: 'AI 看视频', desc: 'Qwen-VL 直接吃视频 URL', meta: '15-40s' },
+        { color: '#06b6d4', title: '吐 highlights', desc: '输出"几点几分到几点几分有什么"', meta: '同上' },
+        { color: '#10b981', title: '文本+视觉融合', desc: '描述向量 + 画面向量 五五开', meta: '<100ms' },
+        { color: '#f59e0b', title: 'KMeans 聚类', desc: '相似的归到一组（K=√N）', meta: '<200ms' },
+        { color: '#ec4899', title: 'LLM 命名', desc: '让 AI 给每组起个 4-8 字的名字', meta: '0.5-1s/簇' },
+        { color: '#6366f1', title: '写入 KB', desc: '自动建好的样例册可直接用', meta: '<100ms' },
+      ],
+    },
+  };
+
+  function renderFlow(key) {
+    const flow = flows[key];
+    const c = document.getElementById('flow-container');
+    c.innerHTML = flow.steps.map((s, i) => `
+      <div class="flow-step" style="--step-color: ${s.color}">
+        <span class="num">${i+1}</span>
+        <h4>${s.title}</h4>
+        <p>${s.desc}</p>
+        <div class="meta">⏱ ${s.meta}</div>
+      </div>
+    `).join('');
+    document.getElementById('flow-analogy').textContent = flow.analogy;
+  }
+
+  document.querySelectorAll('.pipeline-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.pipeline-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      renderFlow(tab.dataset.flow);
+    });
+  });
+  renderFlow('annotate');
+
+  // ===== Demo simulator =====
+  const sceneScripts = {
+    action: [
+      { type: 'info', text: '🎬 加载视频: action_movie_clip_087.mp4 (102 秒, 1080p)' },
+      { type: 'step', text: '【步骤 1】 解码 + 切片', delay: 800 },
+      { type: 'info', text: '  → 用 decord 探测元信息: 25 fps / 2550 帧' },
+      { type: 'info', text: '  → PySceneDetect 检测到 12 个场景' },
+      { type: 'info', text: '  → 长场景内滑窗细分: 共 38 个 clip' },
+      { type: 'ok', text: '  ✓ 切片完成 (1.2s)', delay: 1200 },
+      { type: 'step', text: '【步骤 2】 视觉编码', delay: 600 },
+      { type: 'info', text: '  → 加载 Chinese-CLIP-Large (1.51 GB, 已缓存)' },
+      { type: 'info', text: '  → 每 clip 抽 8 帧，运动量自适应采样' },
+      { type: 'info', text: '  → 38 × 8 = 304 帧 → MPS GPU 批量编码' },
+      { type: 'ok', text: '  ✓ 编码完成 (4.8s, 单帧 ~13ms)', delay: 1500 },
+      { type: 'step', text: '【步骤 3】 知识库检索', delay: 600 },
+      { type: 'info', text: '  → KB: action_kb (含 6 类标签 / 47 个样例)' },
+      { type: 'info', text: '  → 每个 clip 查 top-5 相似样例' },
+      { type: 'ok', text: '  ✓ 检索完成 (520ms)', delay: 800 },
+      { type: 'step', text: '【步骤 4】 双门阈值筛选', delay: 600 },
+      { type: 'info', text: '  → 绝对门: score >= 0.05' },
+      { type: 'info', text: '  → 相对门: z-score >= 0.75 σ' },
+      { type: 'info', text: '  → 22 个候选段通过双门' },
+      { type: 'ok', text: '  ✓ 时段合并后剩 6 个高光段', delay: 600 },
+      { type: 'step', text: '【步骤 5】 帧级精修', delay: 600 },
+      { type: 'info', text: '  → 4 fps 重抽帧打分' },
+      { type: 'info', text: '  → "打斗高光" 5.0s → 切到真正动作的 1.4s' },
+      { type: 'ok', text: '  ✓ 精修完成 (2.3s)', delay: 1500 },
+      { type: 'step', text: '【完成】 总耗时 9.4 秒', delay: 400 },
+      { type: 'ok', text: '  ✓ 输出 4 个高光段:' },
+      { type: 'info', text: '    [01:12.3 → 01:13.8] 打斗高光  score=0.81  z=2.1σ' },
+      { type: 'info', text: '    [00:34.6 → 00:36.2] 打斗高光  score=0.76  z=1.6σ' },
+      { type: 'info', text: '    [01:48.0 → 01:48.8] 冲突顶点  score=0.72  z=1.2σ' },
+      { type: 'info', text: '    [00:52.4 → 00:53.1] 打斗高光  score=0.69  z=0.9σ' },
+    ],
+    drama: [
+      { type: 'info', text: '🎬 加载视频: family_drama_ep12.mp4 (138 秒)' },
+      { type: 'step', text: '【步骤 1】 切片', delay: 800 },
+      { type: 'ok', text: '  ✓ 52 个 clip (1.4s)', delay: 1000 },
+      { type: 'step', text: '【步骤 2】 编码', delay: 600 },
+      { type: 'ok', text: '  ✓ 416 帧编码完成 (5.2s)', delay: 1500 },
+      { type: 'step', text: '【步骤 3】 KB 检索', delay: 600 },
+      { type: 'info', text: '  → KB: drama_kb (含"嫌贫爱富/打脸/反转"等 8 类)' },
+      { type: 'ok', text: '  ✓ 检索 (640ms)', delay: 800 },
+      { type: 'step', text: '【步骤 4】 双门筛选', delay: 600 },
+      { type: 'info', text: '  → 18 个候选通过' },
+      { type: 'warn', text: '  ⚠ "其他" 类被过滤（z=0.42 不达 0.75σ）' },
+      { type: 'ok', text: '  ✓ 合并后 5 个高光段', delay: 600 },
+      { type: 'step', text: '【步骤 5】 精修', delay: 600 },
+      { type: 'ok', text: '  ✓ 完成 (3.1s)', delay: 1500 },
+      { type: 'step', text: '【完成】 总耗时 11.0 秒', delay: 400 },
+      { type: 'info', text: '    [00:24.0 → 00:26.5] 嫌贫爱富  score=0.78' },
+      { type: 'info', text: '    [01:32.5 → 01:35.0] 反转打脸  score=0.74' },
+      { type: 'info', text: '    [02:08.0 → 02:09.8] 反转打脸  score=0.71' },
+    ],
+    sport: [
+      { type: 'info', text: '🎬 加载视频: soccer_match_88min.mp4 (90 秒精剪)' },
+      { type: 'step', text: '【步骤 1】 切片', delay: 800 },
+      { type: 'ok', text: '  ✓ 35 个 clip', delay: 1000 },
+      { type: 'step', text: '【步骤 2】 编码', delay: 600 },
+      { type: 'ok', text: '  ✓ 280 帧 (4.2s)', delay: 1500 },
+      { type: 'step', text: '【步骤 3】 KB 检索', delay: 600 },
+      { type: 'info', text: '  → KB: sport_kb (含"进球/抢断/越位/庆祝"4类)' },
+      { type: 'ok', text: '  ✓ 检索 (480ms)', delay: 800 },
+      { type: 'step', text: '【步骤 4】 双门筛选', delay: 600 },
+      { type: 'info', text: '  → 9 个候选通过' },
+      { type: 'ok', text: '  ✓ 合并后 3 个高光段', delay: 600 },
+      { type: 'step', text: '【步骤 5】 精修', delay: 600 },
+      { type: 'info', text: '  → "进球瞬间" 4.0s → 切到 0.8s 关键帧' },
+      { type: 'ok', text: '  ✓ 完成 (1.8s)', delay: 1500 },
+      { type: 'step', text: '【完成】 总耗时 7.6 秒', delay: 400 },
+      { type: 'info', text: '    [00:43.2 → 00:44.0] 进球瞬间  score=0.89  z=2.8σ ⭐' },
+      { type: 'info', text: '    [01:18.5 → 01:19.7] 庆祝     score=0.74' },
+      { type: 'info', text: '    [00:12.0 → 00:13.4] 抢断     score=0.68' },
+    ],
+  };
+
+  let demoRunning = false;
+  const stage = document.getElementById('demo-output');
+  const runBtn = document.getElementById('demo-run');
+  const clearBtn = document.getElementById('demo-clear');
+  const sceneSel = document.getElementById('demo-scene');
+
+  async function runDemo() {
+    if (demoRunning) return;
+    demoRunning = true;
+    runBtn.disabled = true;
+    runBtn.textContent = '⏳ 运行中...';
+    stage.innerHTML = '';
+    const script = sceneScripts[sceneSel.value];
+    for (const line of script) {
+      const div = document.createElement('div');
+      div.className = line.type;
+      div.textContent = line.text;
+      stage.appendChild(div);
+      stage.scrollTop = stage.scrollHeight;
+      await new Promise(r => setTimeout(r, line.delay || 350));
+    }
+    runBtn.disabled = false;
+    runBtn.textContent = '▶ 重新模拟';
+    demoRunning = false;
+  }
+
+  runBtn.addEventListener('click', runDemo);
+  clearBtn.addEventListener('click', () => {
+    stage.innerHTML = '点击"开始模拟"启动一次完整的高光标注流程...';
+    runBtn.textContent = '▶ 开始模拟';
+  });
+</script>
+
+</body>
+</html>

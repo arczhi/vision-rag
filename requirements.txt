@@ -1,0 +1,44 @@
+# ============================================================
+# Vision RAG
+# CLIP + Qdrant + 多模态 rerank
+# ============================================================
+
+# --- 核心依赖 ---
+torch>=2.1.0
+torchvision>=0.16.0
+transformers>=4.40.0
+accelerate>=0.27.0
+einops>=0.7.0
+
+# --- 视频处理 ---
+# decord 在容器内 (linux/amd64) 走官方 wheel, 比 opencv 快 3-5x
+# 原生 macOS arm64 上 PyPI 无 wheel, video_processor.py 已做 opencv 兜底
+decord>=0.6.0
+opencv-python>=4.8.0
+Pillow>=10.0.0
+av>=12.0.0              # PyAV, ffmpeg python binding
+faster-whisper>=1.2.1   # 本地 ASR, 给 Qwen2-VL 补充台词理解
+ctranslate2>=4.7.2      # faster-whisper runtime
+
+# --- Embedding (CLIP / open_clip) ---
+open_clip_torch>=2.24.0 # 加载 HuggingFace CLIP/EVA-CLIP/SigLIP
+timm>=0.9.12            # vision transformer 依赖
+huggingface_hub>=0.20.0 # 模型下载
+
+# --- 向量数据库 (Qdrant, 主视频多模态 named-vector 索引 + 高光 KB) ---
+qdrant-client>=1.18.0
+
+# --- Reranker (InternVL, 可选, demo 默认关闭) ---
+sentencepiece>=0.1.99
+
+# --- API 服务 ---
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9  # 文件上传支持
+
+# --- 工具 ---
+loguru>=0.7.0
+tqdm>=4.66.0
+pydantic>=2.5.0
+numpy>=1.24.0
+python-dotenv>=1.0.0      # 启动期加载 .env 中的敏感凭证

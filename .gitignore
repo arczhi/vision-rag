@@ -1,0 +1,50 @@
+# ---- 敏感凭证 (绝不提交) ----
+.env
+.env.local
+.env.*.local
+*.env
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# ---- IDE / OS ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+*.bak
+*.bak.*
+
+# ---- 项目运行产物 ----
+data/
+!data/.gitkeep
+data/_tmp_annotate/
+logs/
+models/
+
+# ---- Claude / 工具 ----
+.claude/
+.codegraph/
+.codex/
+
+# ---- Docker volumes ----
+volumes/

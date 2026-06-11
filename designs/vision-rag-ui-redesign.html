@@ -1,0 +1,893 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vision RAG UI Redesign</title>
+<style>
+  :root {
+    --bg: #f7f8fb;
+    --surface: #ffffff;
+    --surface-soft: #f2f5f9;
+    --line: #dfe5ee;
+    --line-strong: #cfd8e6;
+    --text: #172033;
+    --muted: #667085;
+    --quiet: #98a2b3;
+    --blue: #3668f5;
+    --blue-2: #2154db;
+    --blue-soft: #eaf0ff;
+    --green: #1f9d69;
+    --green-soft: #e7f7f0;
+    --amber: #c87b10;
+    --amber-soft: #fff3d7;
+    --red: #d44242;
+    --red-soft: #fee9e9;
+    --ink-soft: #202a3a;
+    --shadow: 0 18px 45px rgba(33, 49, 80, .08);
+    --shadow-sm: 0 3px 12px rgba(33, 49, 80, .05);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+
+  .app {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 248px minmax(0, 1fr);
+  }
+
+  .sidebar {
+    background: #fbfcfe;
+    border-right: 1px solid var(--line);
+    padding: 22px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 4px;
+  }
+
+  .brand-mark {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    background: var(--ink-soft);
+    display: grid;
+    place-items: center;
+    color: white;
+    font-weight: 700;
+  }
+
+  .brand-title { font-size: 16px; font-weight: 700; letter-spacing: 0; }
+  .brand-sub { color: var(--muted); font-size: 12px; }
+
+  .nav-group { display: grid; gap: 7px; }
+  .nav-item {
+    display: grid;
+    grid-template-columns: 28px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 11px;
+    border-radius: 8px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  .nav-item.active {
+    color: var(--blue);
+    background: var(--blue-soft);
+  }
+
+  .nav-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+    background: white;
+    border: 1px solid var(--line);
+    display: grid;
+    place-items: center;
+    color: inherit;
+  }
+
+  .nav-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+  }
+
+  .kb-card {
+    margin-top: auto;
+    border: 1px solid var(--line);
+    background: white;
+    border-radius: 8px;
+    padding: 13px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .eyebrow {
+    color: var(--quiet);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  .kb-name {
+    margin-top: 6px;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kb-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 7px;
+    margin-top: 12px;
+  }
+
+  .stat-mini {
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 7px;
+    background: var(--surface-soft);
+  }
+
+  .stat-mini b { display: block; font-size: 16px; }
+  .stat-mini span { color: var(--muted); font-size: 11px; }
+
+  .main {
+    padding: 22px 28px 28px;
+    min-width: 0;
+  }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+
+  .title-block h1 {
+    margin: 0;
+    font-size: 24px;
+    line-height: 1.16;
+    letter-spacing: 0;
+  }
+
+  .title-block p {
+    margin: 5px 0 0;
+    color: var(--muted);
+  }
+
+  .status-pill {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid #bfe7d2;
+    background: var(--green-soft);
+    color: #13744c;
+    padding: 7px 11px;
+    border-radius: 999px;
+    font-weight: 650;
+    font-size: 12px;
+  }
+
+  .primary-action {
+    border: 0;
+    background: var(--blue);
+    color: white;
+    height: 40px;
+    padding: 0 16px;
+    border-radius: 8px;
+    font-weight: 700;
+    box-shadow: 0 8px 18px rgba(54,104,245,.22);
+  }
+
+  .workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 330px;
+    gap: 18px;
+    align-items: start;
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .panel-head {
+    padding: 15px 16px 13px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .panel-title { font-size: 15px; font-weight: 750; }
+  .panel-note { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .panel-body { padding: 16px; }
+
+  .step-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .step {
+    border: 1px solid var(--line);
+    background: #fbfcff;
+    border-radius: 8px;
+    padding: 13px;
+    display: grid;
+    gap: 8px;
+  }
+
+  .step.active {
+    border-color: #a9bffd;
+    background: var(--blue-soft);
+  }
+
+  .step-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .step-num {
+    width: 25px;
+    height: 25px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    font-weight: 750;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    background: white;
+  }
+
+  .step.active .step-num { color: white; background: var(--blue); border-color: var(--blue); }
+  .step strong { font-size: 13px; }
+  .step span { color: var(--muted); font-size: 12px; }
+
+  .upload-box {
+    border: 1.5px dashed #b7c5d8;
+    background: #fbfdff;
+    border-radius: 8px;
+    padding: 18px;
+    display: grid;
+    grid-template-columns: 42px 1fr auto;
+    gap: 14px;
+    align-items: center;
+  }
+
+  .upload-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    background: var(--blue-soft);
+    color: var(--blue);
+    display: grid;
+    place-items: center;
+    font-size: 18px;
+    font-weight: 800;
+  }
+
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+
+  .switch-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-top: 13px;
+    padding: 11px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fbfcfe;
+  }
+
+  .switch {
+    width: 42px;
+    height: 24px;
+    border-radius: 999px;
+    background: var(--blue);
+    padding: 3px;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .switch::after {
+    content: "";
+    width: 18px;
+    height: 18px;
+    background: white;
+    border-radius: 50%;
+    box-shadow: 0 2px 6px rgba(0,0,0,.16);
+  }
+
+  .section-grid {
+    display: grid;
+    grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+    gap: 14px;
+    margin-top: 14px;
+  }
+
+  .field {
+    display: grid;
+    gap: 6px;
+  }
+
+  label {
+    color: var(--muted);
+    font-weight: 650;
+    font-size: 12px;
+  }
+
+  .control, .select {
+    height: 40px;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: white;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .select::after { content: "⌄"; color: var(--quiet); font-size: 18px; line-height: 1; }
+
+  .segmented {
+    display: inline-grid;
+    grid-auto-flow: column;
+    background: var(--surface-soft);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 3px;
+    gap: 3px;
+  }
+
+  .segmented span {
+    padding: 7px 11px;
+    border-radius: 6px;
+    color: var(--muted);
+    font-weight: 650;
+    font-size: 12px;
+  }
+
+  .segmented .on {
+    background: white;
+    color: var(--blue);
+    box-shadow: 0 1px 3px rgba(32,45,70,.08);
+  }
+
+  .sample-strip {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .sample {
+    min-height: 92px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--surface-soft);
+    overflow: hidden;
+    position: relative;
+  }
+
+  .sample img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .sample .tag {
+    position: absolute;
+    left: 7px;
+    bottom: 7px;
+    background: rgba(255,255,255,.92);
+    border: 1px solid rgba(255,255,255,.7);
+    border-radius: 999px;
+    padding: 3px 8px;
+    color: var(--blue);
+    font-size: 11px;
+    font-weight: 750;
+  }
+
+  .run-card {
+    margin-top: 14px;
+    border: 1px solid #abc0ff;
+    background: linear-gradient(180deg, #fbfdff 0%, #f2f6ff 100%);
+    border-radius: 8px;
+    padding: 15px;
+  }
+
+  .run-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 13px;
+  }
+
+  .run-head strong { font-size: 15px; }
+
+  .settings {
+    display: grid;
+    grid-template-columns: 1.2fr repeat(3, .55fr);
+    gap: 10px;
+    align-items: end;
+  }
+
+  .run-button {
+    margin-top: 13px;
+    width: 100%;
+    height: 44px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--blue);
+    color: white;
+    font-size: 14px;
+    font-weight: 800;
+    box-shadow: 0 10px 22px rgba(54,104,245,.22);
+  }
+
+  .results {
+    margin-top: 14px;
+    display: grid;
+    gap: 10px;
+  }
+
+  .result-row {
+    display: grid;
+    grid-template-columns: 118px 1fr auto;
+    gap: 13px;
+    align-items: center;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px;
+    background: white;
+  }
+
+  .thumb {
+    aspect-ratio: 16 / 9;
+    border-radius: 7px;
+    overflow: hidden;
+    background: var(--surface-soft);
+  }
+
+  .thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .result-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 5px;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    padding: 0 9px;
+    border-radius: 999px;
+    background: var(--blue-soft);
+    color: var(--blue);
+    font-weight: 750;
+    font-size: 12px;
+  }
+
+  .score { color: var(--blue); font-weight: 800; font-variant-numeric: tabular-nums; }
+  .ghost-btn {
+    height: 34px;
+    padding: 0 12px;
+    border: 1px solid var(--line-strong);
+    background: white;
+    color: var(--text);
+    border-radius: 8px;
+    font-weight: 700;
+  }
+
+  .side-stack { display: grid; gap: 14px; }
+
+  .metric-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .metric {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+    background: #fbfcfe;
+  }
+
+  .metric b { display: block; font-size: 24px; line-height: 1.1; }
+  .metric span { color: var(--muted); font-size: 12px; }
+
+  .health-list { display: grid; gap: 9px; }
+  .health-item {
+    display: grid;
+    grid-template-columns: 9px 1fr auto;
+    align-items: center;
+    gap: 9px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .health-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); }
+  .health-dot.warn { background: var(--amber); }
+  .health-pill {
+    border-radius: 999px;
+    padding: 3px 8px;
+    background: var(--green-soft);
+    color: #13744c;
+    font-weight: 700;
+  }
+
+  .health-pill.warn {
+    background: var(--amber-soft);
+    color: #94600b;
+  }
+
+  .video-list { display: grid; gap: 9px; }
+  .video-item {
+    border: 1px solid var(--line);
+    background: #fbfcfe;
+    border-radius: 8px;
+    padding: 10px;
+    display: grid;
+    grid-template-columns: 42px 1fr;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .video-thumb {
+    width: 42px;
+    height: 42px;
+    border-radius: 7px;
+    overflow: hidden;
+    background: var(--surface-soft);
+  }
+
+  .video-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .filename {
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .progress {
+    height: 7px;
+    border-radius: 999px;
+    background: #e5eaf2;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+
+  .progress span {
+    display: block;
+    width: 72%;
+    height: 100%;
+    background: var(--blue);
+  }
+
+  .warning {
+    display: grid;
+    grid-template-columns: 24px 1fr;
+    gap: 10px;
+    border: 1px solid #f2d69a;
+    background: var(--amber-soft);
+    color: #81550b;
+    border-radius: 8px;
+    padding: 11px;
+    font-size: 12px;
+  }
+
+  .link-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--blue);
+    font-weight: 700;
+    font-size: 12px;
+    margin-top: 11px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">VR</div>
+      <div>
+        <div class="brand-title">Vision RAG</div>
+        <div class="brand-sub">视频检索与高光标注</div>
+      </div>
+    </div>
+
+    <nav class="nav-group">
+      <div class="nav-item">
+        <div class="nav-icon">⌕</div>
+        <div>语义检索</div>
+      </div>
+      <div class="nav-item active">
+        <div class="nav-icon">◆</div>
+        <div>高光工作台</div>
+        <div class="nav-dot"></div>
+      </div>
+      <div class="nav-item">
+        <div class="nav-icon">▦</div>
+        <div>视频库</div>
+      </div>
+      <div class="nav-item">
+        <div class="nav-icon">⚙</div>
+        <div>任务记录</div>
+      </div>
+    </nav>
+
+    <div class="kb-card">
+      <div class="eyebrow">Current KB</div>
+      <div class="kb-name">director-highlight</div>
+      <div class="kb-stats">
+        <div class="stat-mini"><b>36</b><span>样例</span></div>
+        <div class="stat-mini"><b>10</b><span>标签</span></div>
+        <div class="stat-mini"><b>4</b><span>命中</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="title-block">
+        <h1>高光标注工作台</h1>
+        <p>按“入库视频 → 补充样例 → 运行标注 → 复核片段”的顺序完成一次高光筛选。</p>
+      </div>
+      <div class="status-pill"><span class="nav-dot"></span> Milvus connected</div>
+      <button class="primary-action">导出结果</button>
+    </div>
+
+    <div class="workspace">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">一次标注流程</div>
+            <div class="panel-note">当前目标视频：02177979599041900000000000000000000ffffac191c1f5cbdee.mp4</div>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="step-grid">
+            <div class="step">
+              <div class="step-top"><div class="step-num">1</div><span>已完成</span></div>
+              <strong>视频入库</strong>
+              <span>上传视频并生成片段向量</span>
+            </div>
+            <div class="step active">
+              <div class="step-top"><div class="step-num">2</div><span>当前</span></div>
+              <strong>样例准备</strong>
+              <span>确认每个标签有足够样例</span>
+            </div>
+            <div class="step">
+              <div class="step-top"><div class="step-num">3</div><span>待执行</span></div>
+              <strong>运行标注</strong>
+              <span>输出可播放的高光片段</span>
+            </div>
+          </div>
+
+          <div class="upload-box">
+            <div class="upload-icon">↑</div>
+            <div>
+              <strong>拖入视频或选择文件入库</strong>
+              <div class="muted small">支持批量上传，任务会串行执行以避免显存争抢。</div>
+            </div>
+            <button class="ghost-btn">选择视频</button>
+          </div>
+
+          <div class="switch-row">
+            <div>
+              <strong>跳过已入库视频</strong>
+              <div class="muted small">同一视频已存在时直接复用向量，不重复处理。</div>
+            </div>
+            <div class="switch"></div>
+          </div>
+
+          <div class="section-grid">
+            <div class="field">
+              <label>知识库</label>
+              <div class="select"><span>director-highlight</span></div>
+            </div>
+            <div class="field">
+              <label>新增高光样例</label>
+              <div class="control"><span>产品特写：a clean product close-up shot</span><span class="chip">添加</span></div>
+            </div>
+          </div>
+
+          <div class="section-grid">
+            <div class="field">
+              <label>样例来源</label>
+              <div class="segmented">
+                <span class="on">文字描述</span>
+                <span>视频片段</span>
+                <span>图片</span>
+              </div>
+            </div>
+            <div class="field">
+              <label>样例健康度</label>
+              <div class="control"><span>产品特写 11 个，主角 8 个，高光剧情 4 个</span><span class="chip">稳定</span></div>
+            </div>
+          </div>
+
+          <div class="sample-strip">
+            <div class="sample"><img src="../data/thumbnails/9ef742f0c3d566a2_00000.jpg" alt=""><span class="tag">产品特写</span></div>
+            <div class="sample"><img src="../data/thumbnails/a13391a3fa64cafa_00001.jpg" alt=""><span class="tag">相机产品图</span></div>
+            <div class="sample"><img src="../data/thumbnails/1990c18a162e549e_00003.jpg" alt=""><span class="tag">主角</span></div>
+            <div class="sample"><img src="../data/thumbnails/a45b8773f95e7e9d_00003.jpg" alt=""><span class="tag">故事场景</span></div>
+            <div class="sample"><img src="../data/thumbnails/6e4d907444381ebb_00004.jpg" alt=""><span class="tag">高潮情节</span></div>
+          </div>
+
+          <div class="run-card">
+            <div class="run-head">
+              <div>
+                <strong>运行高光标注</strong>
+                <div class="muted small">推荐参数已填好，只需要确认目标视频和精化开关。</div>
+              </div>
+              <div class="segmented"><span>快速</span><span class="on">精准</span></div>
+            </div>
+
+            <div class="settings">
+              <div class="field">
+                <label>目标视频</label>
+                <div class="select"><span>021779795990419000...mp4</span></div>
+              </div>
+              <div class="field">
+                <label>相对阈值</label>
+                <div class="control">0.75 σ</div>
+              </div>
+              <div class="field">
+                <label>最低分</label>
+                <div class="control">0.05</div>
+              </div>
+              <div class="field">
+                <label>Top-K</label>
+                <div class="control">5</div>
+              </div>
+            </div>
+
+            <div class="switch-row">
+              <div>
+                <strong>帧级精化</strong>
+                <div class="muted small">把 5 秒粗段收窄到真正动作发生的 0.5 秒级片段。</div>
+              </div>
+              <div class="switch"></div>
+            </div>
+
+            <button class="run-button">开始标注</button>
+          </div>
+
+          <div class="results">
+            <div class="result-row">
+              <div class="thumb"><img src="../data/thumbnails/a13391a3fa64cafa_00001.jpg" alt=""></div>
+              <div>
+                <div class="result-title"><span class="chip">相机产品图</span><strong>00:09.3 → 00:10.0</strong><span class="score">0.9242</span></div>
+                <div class="muted small">触发样例：相机产品图 0.893 · 0.7s · 1 个 clip</div>
+              </div>
+              <button class="ghost-btn">播放</button>
+            </div>
+            <div class="result-row">
+              <div class="thumb"><img src="../data/thumbnails/9ef742f0c3d566a2_00000.jpg" alt=""></div>
+              <div>
+                <div class="result-title"><span class="chip">产品特写</span><strong>00:00.4 → 00:01.5</strong><span class="score">0.8642</span></div>
+                <div class="muted small">触发样例：产品特写 0.990 · 产品特写 0.922 · 1.1s</div>
+              </div>
+              <button class="ghost-btn">播放</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="side-stack">
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <div class="panel-title">运行前检查</div>
+              <div class="panel-note">把风险信息放在按钮旁边，而不是藏在页面底部。</div>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="metric-grid">
+              <div class="metric"><b>159</b><span>总样例</span></div>
+              <div class="metric"><b>36</b><span>当前 KB 样例</span></div>
+              <div class="metric"><b>10</b><span>标签类别</span></div>
+              <div class="metric"><b>16s</b><span>上次耗时</span></div>
+            </div>
+            <div class="warning" style="margin-top:12px;">
+              <strong>!</strong>
+              <div>部分标签只有 1 个样例。建议每个标签至少 3 个，z-score 归一会更稳定。</div>
+            </div>
+            <div class="health-list" style="margin-top:14px;">
+              <div class="health-item"><span class="health-dot"></span><span>Milvus 连接</span><span class="health-pill">正常</span></div>
+              <div class="health-item"><span class="health-dot"></span><span>视频已入库</span><span class="health-pill">11 个</span></div>
+              <div class="health-item"><span class="health-dot warn"></span><span>标签样例数</span><span class="health-pill warn">需补充</span></div>
+              <div class="health-item"><span class="health-dot"></span><span>帧级精化</span><span class="health-pill">开启</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <div class="panel-title">入库队列</div>
+              <div class="panel-note">上传后立即显示进度和处理状态。</div>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="video-list">
+              <div class="video-item">
+                <div class="video-thumb"><img src="../data/thumbnails/a13391a3fa64cafa_00000.jpg" alt=""></div>
+                <div>
+                  <div class="filename">021779795990419...mp4</div>
+                  <div class="muted small">已入库 · 4 个片段</div>
+                </div>
+              </div>
+              <div class="video-item">
+                <div class="video-thumb"><img src="../data/thumbnails/9ef742f0c3d566a2_00002.jpg" alt=""></div>
+                <div>
+                  <div class="filename">0_5ecbcbd1...mp4</div>
+                  <div class="muted small">处理中 · embed 72%</div>
+                  <div class="progress"><span></span></div>
+                </div>
+              </div>
+              <div class="video-item">
+                <div class="video-thumb"><img src="../data/thumbnails/a413004a74daa4cf_00004.jpg" alt=""></div>
+                <div>
+                  <div class="filename">182ed8083b654333...mp4</div>
+                  <div class="muted small">等待中</div>
+                </div>
+              </div>
+            </div>
+            <div class="link-row"><span>查看全部视频</span><span>刷新</span></div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+</div>
+</body>
+</html>

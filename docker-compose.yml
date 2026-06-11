@@ -1,0 +1,68 @@
+# Vision RAG - 基础设施
+# 启动: docker compose up -d
+
+services:
+  # --- Qdrant: 主视频多模态 named-vector 索引 ---
+  # Web UI: http://localhost:6333/dashboard
+  qdrant:
+    image: qdrant/qdrant:v1.15.4
+    ports:
+      - "6333:6333"   # HTTP + built-in dashboard
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  # --- SQLite 可视化管理: 查看 ./data 下的本地反馈 / LLM 结果库 ---
+  sqlite-ui:
+    build:
+      context: .
+      dockerfile: docker/sqlite-ui/Dockerfile
+    image: vision-rag-sqlite-ui:latest
+    platform: linux/amd64
+    ports:
+      - "${SQLITE_UI_PORT:-18081}:8001"
+    volumes:
+      - ./data:/data:ro
+    restart: unless-stopped
+
+  # --- Vision RAG API ---
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+    image: vision-rag-api:latest
+    platform: linux/amd64
+    env_file:
+      - .env
+    environment:
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      QDRANT_GRPC_PORT: "6334"
+      API_HOST: 0.0.0.0
+      API_PORT: "28765"
+      HF_ENDPOINT: https://hf-mirror.com
+      HF_HOME: /app/models
+      HUGGINGFACE_HUB_CACHE: /app/models
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models     # 模型缓存挂出来, 重建容器不重下
+      - ./web:/app/web           # 前端可热改不必重建
+      # demo: python 代码也挂卷, 改完 docker compose restart api 即可生效, 不用重 build
+      - ./api:/app/api
+      - ./search:/app/search
+      - ./ingest:/app/ingest
+      - ./annotate:/app/annotate
+      - ./config.py:/app/config.py
+      - ./scripts:/app/scripts
+    ports:
+      - "28765:28765"            # Web UI + API
+    depends_on:
+      qdrant:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:

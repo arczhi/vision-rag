@@ -1,0 +1,5033 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vision RAG</title>
+<style>
+  /* =========================================================
+     Vision RAG · workbench 2026 redesign
+     Single source of truth. One token set. One accent.
+     ========================================================= */
+  :root {
+    /* surfaces */
+    --bg:        #f6f7f9;
+    --surface:   #ffffff;
+    --surface-2: #f1f3f6;
+    --surface-3: #e8ebf0;
+    --side-bg:   #fafbfc;
+
+    /* lines */
+    --line:      #e4e7ec;
+    --line-2:    #d3d8e0;
+
+    /* text */
+    --text:      #111827;
+    --text-2:    #374151;
+    --muted:     #6b7280;
+    --quiet:     #9ca3af;
+
+    /* one accent — desaturated indigo */
+    --accent:    #3a55c4;
+    --accent-2:  #2c44a8;
+    --accent-soft: #eef1fb;
+    --accent-line: #d6def5;
+
+    /* semantic */
+    --ok:        #15795a;
+    --ok-soft:   #e3f3ec;
+    --warn:      #946100;
+    --warn-soft: #fbf2dc;
+    --bad:       #b3261e;
+    --bad-soft:  #fbeae9;
+
+    /* shape & shadow — locked */
+    --r-sm: 6px;
+    --r-md: 8px;
+    --r-lg: 10px;
+    --shadow-1: 0 1px 2px rgba(17, 24, 39, .04);
+    --shadow-2: 0 4px 14px rgba(17, 24, 39, .06);
+    --focus:    0 0 0 3px rgba(58, 85, 196, .18);
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Helvetica Neue",
+          "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased; font-feature-settings: "tnum" 1, "cv11" 1;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  ::selection { background: var(--accent-soft); color: var(--accent-2); }
+
+  /* legacy header / nav (kept for compatibility, hidden) */
+  body > header:not(.ob-header), .nav { display: none !important; }
+
+  /* =====================================================
+     shell · sidebar + main
+     ===================================================== */
+  .app-shell {
+    min-height: 100dvh;
+    display: grid;
+    grid-template-columns: 232px minmax(0, 1fr);
+  }
+  .side-nav {
+    background: var(--side-bg);
+    border-right: 1px solid var(--line);
+    padding: 20px 14px 16px;
+    display: flex; flex-direction: column; gap: 22px;
+    position: sticky; top: 0; height: 100dvh;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 0 6px; }
+  .brand-mark {
+    width: 28px; height: 28px; border-radius: 7px;
+    background: var(--accent); color: #fff;
+    display: grid; place-items: center;
+    font-weight: 600; font-size: 12px; letter-spacing: .02em;
+  }
+  .brand-title { font-size: 14px; font-weight: 600; line-height: 1.2; color: var(--text); }
+  .brand-sub { color: var(--muted); font-size: 11.5px; line-height: 1.3; margin-top: 2px; }
+
+  .work-nav { display: grid; gap: 2px; }
+  .nav-tab {
+    display: grid; grid-template-columns: 22px 1fr auto;
+    align-items: center; gap: 10px;
+    padding: 7px 9px; border-radius: var(--r-sm);
+    color: var(--text-2); font-size: 13px; font-weight: 500;
+    cursor: pointer; user-select: none;
+    transition: background .12s, color .12s;
+  }
+  .nav-tab:hover { background: var(--surface-2); color: var(--text); }
+  .nav-tab.active { background: var(--accent-soft); color: var(--accent-2); }
+  .nav-icon {
+    width: 18px; height: 18px;
+    display: grid; place-items: center;
+    color: var(--muted); font-size: 14px;
+    background: transparent; border: 0;
+  }
+  .nav-tab.active .nav-icon { color: var(--accent); }
+  .nav-live {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--ok);
+  }
+
+  .side-kb {
+    margin-top: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    padding: 12px;
+    background: var(--surface);
+  }
+  .eyebrow {
+    color: var(--quiet); font-size: 11px; font-weight: 500;
+    letter-spacing: 0; text-transform: none;
+  }
+  .side-kb-name {
+    margin-top: 4px; font-weight: 600; font-size: 13px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--text);
+  }
+  .side-kb-stats {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 6px; margin-top: 10px;
+  }
+  .side-stat {
+    border: 0; background: var(--surface-2);
+    border-radius: var(--r-sm); padding: 7px 8px;
+  }
+  .side-stat b {
+    display: block; font-size: 15px; font-weight: 600;
+    font-variant-numeric: tabular-nums; color: var(--text);
+  }
+  .side-stat span { color: var(--muted); font-size: 11px; }
+
+  /* =====================================================
+     main · topbar
+     ===================================================== */
+  .app-main { min-width: 0; padding: 22px 28px 40px; }
+  .topbar {
+    display: flex; align-items: flex-end; gap: 16px; margin-bottom: 20px;
+    padding-bottom: 16px; border-bottom: 1px solid var(--line);
+  }
+  .title-block h1 {
+    margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -.01em;
+    line-height: 1.25; color: var(--text);
+  }
+  .title-block p {
+    margin: 4px 0 0; color: var(--muted); font-size: 12.5px;
+    max-width: 56ch;
+  }
+  .status {
+    margin-left: auto;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 9px; border-radius: 999px;
+    background: transparent; border: 1px solid var(--line);
+    color: var(--muted); font-size: 12px; font-weight: 500;
+  }
+  .status .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin: 0; }
+  .status .dot.ok { background: var(--ok); }
+  .status .dot.bad { background: var(--bad); }
+
+  /* =====================================================
+     buttons · single accent, ghost as default secondary
+     ===================================================== */
+  button, .primary-btn {
+    height: 32px; padding: 0 14px;
+    background: var(--accent); color: #fff; border: 0;
+    border-radius: var(--r-sm);
+    font: inherit; font-weight: 500; font-size: 13px;
+    cursor: pointer;
+    transition: background .12s, transform .04s, box-shadow .12s;
+  }
+  button:hover, .primary-btn:hover { background: var(--accent-2); }
+  button:active, .primary-btn:active { transform: translateY(1px); }
+  button:focus-visible { outline: none; box-shadow: var(--focus); }
+  button:disabled {
+    background: var(--surface-3); color: var(--muted);
+    cursor: not-allowed; transform: none;
+  }
+  button.secondary, .ghost-btn {
+    background: var(--surface); color: var(--text-2);
+    border: 1px solid var(--line-2);
+    box-shadow: none;
+  }
+  button.secondary:hover, .ghost-btn:hover {
+    background: var(--surface-2); border-color: var(--line-2); color: var(--text);
+  }
+  button.danger {
+    background: var(--surface); color: var(--bad);
+    border: 1px solid var(--line-2);
+  }
+  button.danger:hover { background: var(--bad-soft); border-color: #e7b6b2; }
+  .export-btn {
+    height: 32px; padding: 0 14px;
+    background: var(--surface); color: var(--text-2);
+    border: 1px solid var(--line-2);
+    border-radius: var(--r-sm);
+    font-weight: 500; font-size: 13px;
+    box-shadow: none;
+  }
+  .export-btn:hover { background: var(--surface-2); color: var(--text); }
+
+  /* =====================================================
+     forms · single rhythm
+     ===================================================== */
+  .row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .field {
+    display: flex; flex-direction: column; gap: 5px;
+    flex: 1; min-width: 140px;
+  }
+  .field > label, label {
+    color: var(--muted); font-size: 11.5px; font-weight: 500;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .field .tip {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--surface-2); color: var(--quiet);
+    font-size: 10px; cursor: help; border: 1px solid var(--line);
+  }
+  .field .tip:hover { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
+  input[type=text], input[type=number], select {
+    height: 34px; padding: 0 11px;
+    background: var(--surface);
+    border: 1px solid var(--line-2);
+    border-radius: var(--r-sm);
+    color: var(--text); font: inherit; font-size: 13px;
+    outline: none;
+    transition: border-color .12s, box-shadow .12s;
+    width: 100%; min-width: 0;
+  }
+  input[type=text]:hover, input[type=number]:hover, select:hover { border-color: #b9c1cd; }
+  input[type=text]:focus, input[type=number]:focus, select:focus {
+    border-color: var(--accent); box-shadow: var(--focus);
+  }
+  input[type=text]:disabled { background: var(--surface-2); color: var(--muted); cursor: not-allowed; }
+  input[type=number] { font-variant-numeric: tabular-nums; }
+  input[type=file] {
+    font-size: 12.5px; color: var(--muted);
+    max-width: 280px;
+  }
+  .file-picker {
+    display: flex; align-items: center; gap: 8px;
+    min-width: 0;
+    padding: 4px;
+    background: var(--surface);
+    border: 1px solid var(--line-2);
+    border-radius: var(--r-sm);
+    transition: border-color .12s, box-shadow .12s, background .12s;
+  }
+  .file-picker:hover { border-color: #b9c1cd; }
+  .file-picker:focus-within {
+    border-color: var(--accent);
+    box-shadow: var(--focus);
+  }
+  .file-picker-btn {
+    flex: 0 0 auto;
+    height: 26px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface-2);
+    color: var(--text-2);
+    font: inherit; font-size: 12.5px; font-weight: 500;
+    cursor: pointer;
+    transition: background .12s, border-color .12s, color .12s, box-shadow .12s;
+    box-shadow: none;
+  }
+  .file-picker-btn:hover {
+    background: var(--surface-3);
+    border-color: var(--line-2);
+    color: var(--text);
+  }
+  .file-picker-name {
+    min-width: 0;
+    flex: 1;
+    color: var(--muted);
+    font-size: 12.5px;
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .file-picker.has-file .file-picker-name { color: var(--text); }
+  .file-input-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+  select { cursor: pointer; }
+  label.checkbox, .switch-line {
+    display: inline-flex; align-items: center; gap: 7px;
+    color: var(--text-2); font-size: 12.5px; font-weight: 500;
+    cursor: pointer;
+  }
+  label.checkbox input, .switch-line input {
+    accent-color: var(--accent); width: 15px; height: 15px;
+  }
+
+  /* =====================================================
+     panels · the only container
+     ===================================================== */
+  .card, .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-1);
+    overflow: hidden;
+  }
+  .panel-head, .card h2 {
+    margin: 0; padding: 13px 16px;
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 12px;
+    font-size: 13px; font-weight: 600; color: var(--text);
+  }
+  .panel-title {
+    font-size: 13px; font-weight: 600; color: var(--text);
+    line-height: 1.3;
+  }
+  .panel-note, .card h2 .hint {
+    color: var(--muted); font-size: 12px; font-weight: 400;
+    margin-top: 2px;
+  }
+  .panel-body, .card-body { padding: 16px; }
+  .card { padding: 0; }
+  .card h2 { background: transparent; }
+
+  /* nested .panel inside .panel-body — flatten */
+  .panel-body .panel { box-shadow: none; }
+
+  main:not(.ob-stage), .page { max-width: none; margin: 0; padding: 0; display: none; }
+  .page.active { display: block; }
+  .workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+  #page-search .panel { margin-bottom: 16px; }
+  #page-search .panel:last-child { margin-bottom: 0; }
+
+  /* =====================================================
+     flow steps · quiet progress indicator
+     ===================================================== */
+  .flow-steps {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px; margin-bottom: 18px;
+  }
+  .flow-step {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: var(--r-md);
+    padding: 12px 14px;
+    display: grid; gap: 6px;
+    cursor: pointer;
+    transition: border-color .12s, background .12s;
+  }
+  .flow-step:hover { border-color: var(--line-2); background: var(--surface-2); }
+  .flow-step.active {
+    border-color: var(--accent-line);
+    background: var(--accent-soft);
+  }
+  .flow-step-top {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--muted); font-size: 11.5px; font-weight: 500;
+  }
+  .flow-num {
+    width: 18px; height: 18px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-size: 11px; font-weight: 600;
+    color: var(--muted); border: 1px solid var(--line-2); background: var(--surface);
+  }
+  .flow-step.active .flow-num {
+    color: #fff; background: var(--accent); border-color: var(--accent);
+  }
+  .flow-step strong { font-size: 13px; color: var(--text); font-weight: 600; }
+  .flow-step > span { color: var(--muted); font-size: 12px; }
+
+  .step-panel { display: none; }
+  .step-panel.active { display: block; }
+  .step-panel-title {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 14px; margin-bottom: 14px;
+  }
+  .step-panel-title h3 {
+    margin: 0; font-size: 15px; font-weight: 600; color: var(--text);
+    letter-spacing: -.005em;
+  }
+  .step-panel-title p {
+    margin: 4px 0 0; color: var(--muted); font-size: 12.5px;
+  }
+
+  /* =====================================================
+     tabs (text/image, sample text/clip/image)
+     ===================================================== */
+  .tabs {
+    display: flex; gap: 2px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 14px;
+  }
+  .tab {
+    padding: 8px 12px; cursor: pointer;
+    color: var(--muted); font-size: 13px; font-weight: 500;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color .12s;
+  }
+  .tab:hover { color: var(--text-2); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  #page-search .search-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 6px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface-2);
+    margin-bottom: 16px;
+  }
+  #page-search .search-tabs .tab {
+    position: relative;
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    min-height: 62px;
+    margin: 0;
+    padding: 10px 14px;
+    border: 1px solid transparent;
+    border-radius: var(--r-sm);
+    color: var(--text-2);
+    background: transparent;
+    transition: background .12s, border-color .12s, box-shadow .12s, color .12s;
+  }
+  #page-search .search-tabs .tab:hover {
+    background: var(--surface);
+    color: var(--text);
+  }
+  #page-search .search-tabs .tab.active {
+    background: var(--surface);
+    border-color: var(--accent-line);
+    color: var(--accent-2);
+    box-shadow: 0 4px 14px rgba(58, 85, 196, .10);
+  }
+  #page-search .search-tabs .tab.active::after {
+    content: "";
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  #page-search .search-tab-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: var(--r-sm);
+    display: grid;
+    place-items: center;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0;
+  }
+  #page-search .search-tabs .tab.active .search-tab-icon {
+    background: var(--accent-soft);
+    border-color: var(--accent-line);
+    color: var(--accent);
+  }
+  #page-search .search-tab-copy {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+  #page-search .search-tab-title {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.25;
+    color: inherit;
+  }
+  #page-search .search-tab-desc {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  @media (max-width: 720px) {
+    #page-search .search-tabs {
+      grid-template-columns: 1fr;
+    }
+    #page-search .search-tabs .tab {
+      min-height: 56px;
+    }
+    #page-search .search-tab-desc {
+      white-space: normal;
+    }
+  }
+
+  /* =====================================================
+     upload · single quiet box
+     ===================================================== */
+  .upload-box {
+    border: 1px dashed var(--line-2);
+    background: var(--surface-2);
+    border-radius: var(--r-md);
+    padding: 14px 16px;
+    display: grid; grid-template-columns: 32px 1fr auto;
+    gap: 14px; align-items: center;
+  }
+  .upload-box strong { font-size: 13px; font-weight: 600; color: var(--text); }
+  .upload-icon {
+    width: 32px; height: 32px; border-radius: var(--r-sm);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--accent); font-size: 16px; font-weight: 600;
+    display: grid; place-items: center;
+  }
+  .switch-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 14px; margin-top: 10px;
+    padding: 11px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+  }
+  .switch-row strong { font-size: 13px; font-weight: 500; color: var(--text); }
+  .switch-row .muted, .switch-row .small { display: block; margin-top: 2px; }
+
+  /* =====================================================
+     KB summary / banner — soften
+     ===================================================== */
+  .kb-summary {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    padding: 10px 12px; margin-top: 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    font-size: 12.5px; color: var(--text-2);
+  }
+  .kb-summary .chip {
+    padding: 3px 9px; background: var(--surface);
+    border-radius: 999px; border: 1px solid var(--line);
+    color: var(--text-2); font-size: 12px;
+  }
+  .kb-summary .chip b { color: var(--accent); font-weight: 600; }
+  .label-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+  .label-tag, .sample-row .label-pill, .chip {
+    display: inline-flex; align-items: center;
+    padding: 2px 9px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent-2);
+    border: 1px solid var(--accent-line);
+    font-size: 11.5px; font-weight: 500;
+  }
+  .kb-banner {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 9px 12px; margin-bottom: 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    font-size: 12.5px; color: var(--text-2);
+  }
+  .kb-banner.empty {
+    background: var(--warn-soft); border-color: #e8d4a3; color: #6e4c08;
+  }
+  .kb-banner b { color: var(--accent); font-weight: 600; }
+  .kb-banner.empty b { color: var(--warn); }
+  .kb-banner .link {
+    color: var(--accent); cursor: pointer; margin-left: auto; font-size: 12px;
+  }
+  .kb-banner .link:hover { color: var(--accent-2); text-decoration: underline; }
+
+  /* =====================================================
+     run card · the annotate runner
+     ===================================================== */
+  .run-card {
+    margin-top: 0;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: var(--r-md);
+    padding: 16px;
+  }
+  .run-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 14px; margin-bottom: 14px;
+  }
+  .run-head strong { font-size: 13px; font-weight: 600; color: var(--text); }
+  .segmented {
+    display: inline-flex; background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    padding: 2px; gap: 2px;
+  }
+  .segmented span {
+    padding: 5px 10px; border-radius: 4px;
+    color: var(--muted); font-weight: 500; font-size: 12px;
+    cursor: pointer;
+  }
+  .segmented .on {
+    background: var(--surface); color: var(--text);
+    box-shadow: var(--shadow-1);
+  }
+  .run-settings {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr));
+    gap: 10px; align-items: end;
+  }
+  .run-settings .field {
+    background: transparent; border: 0; border-radius: 0;
+    padding: 0; min-height: auto; gap: 5px;
+  }
+  .run-settings label {
+    font-size: 11.5px; color: var(--muted); font-weight: 500;
+  }
+  .run-settings input[type=number], .run-settings select {
+    height: 34px; font-size: 13px; font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .target-video-card { min-height: auto; }
+  .target-video-actions { display: grid; gap: 6px; }
+  .target-upload-line {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--muted); font-size: 12px;
+  }
+  .target-upload-line input[type=file] { max-width: 100%; font-size: 12px; }
+  .target-mode-note {
+    color: var(--accent); font-size: 12px; font-weight: 500;
+  }
+
+  /* compact advanced toggles — turn 5 dials into a single inline group */
+  .run-card .switch-row { margin-top: 12px; padding: 11px 14px; }
+  .run-advanced {
+    margin-top: 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+  }
+  .run-advanced > summary {
+    list-style: none; cursor: pointer; user-select: none;
+    padding: 11px 14px;
+    color: var(--text-2); font-size: 12.5px; font-weight: 500;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .run-advanced > summary::-webkit-details-marker { display: none; }
+  .run-advanced > summary::before {
+    content: "›"; color: var(--quiet); font-size: 14px;
+    transition: transform .15s; display: inline-block;
+  }
+  .run-advanced[open] > summary::before { transform: rotate(90deg); }
+  .run-advanced[open] > summary {
+    border-bottom: 1px solid var(--line);
+    color: var(--text);
+  }
+  .run-advanced-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    padding: 14px;
+  }
+  .run-advanced-grid .field { min-width: 0; }
+  .run-advanced-grid input[type=number] {
+    font-variant-numeric: tabular-nums;
+  }
+  @media (max-width: 900px) {
+    .run-advanced-grid { grid-template-columns: 1fr 1fr; }
+  }
+  #btn-annotate {
+    margin-top: 14px; width: 100%; height: 38px;
+    border: 0; border-radius: var(--r-sm);
+    background: var(--accent); color: #fff;
+    font-size: 13px; font-weight: 600;
+    box-shadow: none;
+  }
+  #btn-annotate:hover { background: var(--accent-2); }
+
+  /* =====================================================
+     side metrics
+     ===================================================== */
+  .side-stack { display: grid; gap: 14px; }
+  .metric-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .metric {
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    padding: 12px 14px;
+    background: var(--surface);
+  }
+  .metric b {
+    display: block; font-size: 20px; line-height: 1.15;
+    font-weight: 600; font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+  .metric span { color: var(--muted); font-size: 12px; margin-top: 2px; display: block; }
+  .health-list { display: grid; gap: 8px; margin-top: 14px; }
+  .health-item {
+    display: grid; grid-template-columns: 8px 1fr auto;
+    align-items: center; gap: 9px;
+    color: var(--text-2); font-size: 12.5px;
+  }
+  .health-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--ok);
+  }
+  .health-dot.warn { background: var(--warn); }
+  .health-pill {
+    border-radius: 999px; padding: 2px 9px;
+    background: var(--ok-soft); color: var(--ok);
+    font-weight: 500; font-size: 11.5px;
+  }
+  .health-pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .warning {
+    display: grid; grid-template-columns: 18px 1fr;
+    gap: 10px; padding: 10px 12px; margin-top: 12px;
+    border: 1px solid #e8d4a3; background: var(--warn-soft); color: #6e4c08;
+    border-radius: var(--r-md); font-size: 12px;
+  }
+  .warning strong { font-weight: 600; }
+
+  /* =====================================================
+     results grid
+     ===================================================== */
+  .grid {
+    display: grid; gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  }
+  .result {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    transition: border-color .12s, box-shadow .12s, transform .04s;
+    cursor: pointer;
+  }
+  .result:hover { border-color: var(--accent-line); box-shadow: var(--shadow-2); }
+  .result:active { transform: translateY(1px); }
+  .result .thumb {
+    aspect-ratio: 16 / 9; background: var(--surface-2) center/cover no-repeat;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--quiet); font-size: 12px;
+  }
+  .result .body { padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+  .result .name { color: var(--text); font-weight: 500; word-break: break-all; }
+  .result .meta { color: var(--muted); font-size: 11.5px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .result .score {
+    color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 500;
+  }
+
+  /* video list / video row / queue row */
+  .videos-list { display: grid; gap: 6px; }
+  .video-row, .queue-row, .sample-row, .annot-row {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+  }
+  .video-row {
+    display: flex; gap: 10px; align-items: center;
+    padding: 10px 12px;
+  }
+  .video-row code {
+    font-size: 11.5px; color: var(--muted);
+    background: var(--surface-2);
+    padding: 1px 6px; border-radius: 4px;
+  }
+  .video-row .path {
+    flex: 1; word-break: break-all;
+    font-size: 12.5px; color: var(--text-2);
+  }
+
+  .ingest-queue { display: grid; gap: 6px; }
+  .queue-row {
+    display: grid; grid-template-columns: 22px 1fr auto auto;
+    gap: 10px; align-items: center;
+    padding: 9px 12px; font-size: 12.5px;
+  }
+  .queue-row .icon { font-size: 13px; text-align: center; color: var(--muted); }
+  .queue-row .name { color: var(--text); word-break: break-all; }
+  .queue-row .info { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+  .queue-row.pending  { opacity: .65; }
+  .queue-row.running  { border-color: var(--accent-line); background: var(--accent-soft); }
+  .queue-row.done     { border-color: #c5e4d5; }
+  .queue-row.done .icon { color: var(--ok); }
+  .queue-row.skipped  { border-color: #e8d4a3; background: var(--warn-soft); }
+  .queue-row.failed   { border-color: #e7b6b2; background: var(--bad-soft); }
+  .queue-row.canceled { opacity: .5; }
+  .queue-summary {
+    display: flex; gap: 12px; padding: 8px 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    font-size: 12px; color: var(--muted);
+  }
+
+  .sample-list { display: grid; gap: 6px; margin-top: 8px; }
+  .sample-row {
+    display: grid; grid-template-columns: auto 1fr auto auto;
+    gap: 12px; align-items: center;
+    padding: 9px 12px; font-size: 12.5px;
+  }
+  .sample-row .note { color: var(--muted); font-size: 11.5px; word-break: break-all; }
+
+  /* clip grid (sample picker) */
+  .clip-grid {
+    display: grid; gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+  .clip-card {
+    position: relative; cursor: pointer;
+    border: 1px solid var(--line); border-radius: var(--r-md);
+    overflow: hidden; background: var(--surface);
+    transition: border-color .12s, transform .04s;
+  }
+  .clip-card:hover { border-color: var(--accent-line); }
+  .clip-card.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+  .clip-card.selected::after {
+    content: "✓"; position: absolute; top: 4px; right: 4px;
+    width: 20px; height: 20px;
+    background: var(--accent); color: #fff;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600;
+  }
+  .clip-card .thumb {
+    aspect-ratio: 16/9;
+    background: var(--surface-2) center/cover no-repeat;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--quiet); font-size: 11px;
+  }
+  .clip-card .meta {
+    padding: 5px 8px; font-size: 11.5px; color: var(--muted);
+    display: flex; justify-content: space-between; gap: 6px;
+  }
+  .clip-card .meta .idx { color: var(--text); font-weight: 500; }
+
+  /* annotate result rows */
+  .annot-list { display: grid; gap: 8px; }
+  .annot-row {
+    display: grid; grid-template-columns: 118px 1fr auto;
+    gap: 14px; align-items: center;
+    padding: 10px;
+    cursor: pointer;
+    transition: border-color .12s, box-shadow .12s;
+  }
+  .annot-row:hover { border-color: var(--accent-line); box-shadow: var(--shadow-2); }
+  .annot-row.rejected {
+    opacity: .82;
+  }
+  .annot-row.rejected .head .score {
+    color: var(--muted);
+  }
+  .annot-rejected-head {
+    margin: 12px 0 4px;
+    padding: 8px 2px 2px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .annot-row .thumb {
+    width: 118px; aspect-ratio: 16/9;
+    background: var(--surface-2) center/cover no-repeat;
+    border-radius: var(--r-sm);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--quiet); font-size: 11px;
+  }
+  .annot-row .info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .annot-row .head {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    font-size: 13px; color: var(--text);
+  }
+  .annot-row .head .score {
+    color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 500;
+  }
+  .annot-row .meta { color: var(--muted); font-size: 11.5px; }
+  .annot-row .evidence {
+    color: var(--muted); font-size: 11.5px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .annot-row .dialogue {
+    color: var(--text-2); font-size: 12px;
+    margin-top: 4px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .annot-row .dialogue b { color: var(--text); font-weight: 700; }
+  .annot-row .understanding {
+    display: grid;
+    gap: 5px;
+    margin-top: 4px;
+    padding: 8px;
+    border-radius: var(--r-sm);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    color: var(--text-2);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .annot-row .understanding .u-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .annot-row .understanding .u-tag {
+    display: inline-flex;
+    align-items: center;
+    min-height: 20px;
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--text);
+    font-size: 11px;
+  }
+  .annot-row .understanding .u-line b {
+    color: var(--text);
+    font-weight: 700;
+  }
+  .annot-row .understanding .u-error { color: var(--danger); }
+  .annot-row .play-btn {
+    height: 28px; padding: 0 12px;
+    background: var(--surface); color: var(--accent);
+    border: 1px solid var(--accent-line);
+    border-radius: var(--r-sm);
+    font-size: 12px; font-weight: 500; cursor: pointer;
+  }
+  .annot-row .play-btn:hover {
+    background: var(--accent-soft);
+  }
+  .annot-row .actions {
+    display: grid;
+    gap: 6px;
+    justify-items: end;
+  }
+  .annot-row .feedback-actions {
+    display: flex;
+    gap: 6px;
+  }
+  .annot-row .feedback-actions button {
+    height: 24px;
+    min-width: 36px;
+    padding: 0 8px;
+    font-size: 12px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    color: var(--text-2);
+    cursor: pointer;
+  }
+  .annot-row .feedback-actions button[data-accepted="true"] { color: var(--ok); }
+  .annot-row .feedback-actions button[data-accepted="false"] { color: var(--danger); }
+
+  /* timing panel */
+  .timing-panel {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    padding: 10px 12px; margin-top: 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    font-size: 12px;
+  }
+  .timing-panel .pill {
+    display: inline-flex; align-items: baseline; gap: 5px;
+    padding: 3px 9px; background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+  }
+  .timing-panel .pill b {
+    color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600;
+  }
+  .timing-panel .label { color: var(--muted); }
+  .timing-panel .total { border-color: var(--accent-line); background: var(--accent-soft); }
+  .timing-panel .total b { color: var(--accent); }
+  .timing-bar {
+    flex: 1 0 100%; height: 5px;
+    background: var(--surface);
+    border-radius: 999px; overflow: hidden;
+    display: flex; margin-top: 4px;
+    border: 1px solid var(--line);
+  }
+  .timing-bar > span { display: block; height: 100%; }
+  .timing-bar .b-embed  { background: var(--accent); }
+  .timing-bar .b-coarse { background: var(--ok); }
+  .timing-bar .b-rerank { background: var(--warn); }
+
+  /* side video small list */
+  .side-video-list { display: grid; gap: 8px; }
+  .side-video {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: var(--r-md);
+    padding: 9px;
+    display: grid; grid-template-columns: 40px 1fr;
+    gap: 10px; align-items: center;
+  }
+  .side-video-thumb {
+    width: 40px; height: 40px;
+    border-radius: var(--r-sm);
+    overflow: hidden;
+    background: var(--surface-2);
+  }
+  .side-video-thumb img {
+    width: 100%; height: 100%;
+    object-fit: cover; display: block;
+  }
+  .filename {
+    font-weight: 500; font-size: 12.5px; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+  .progress {
+    height: 5px; border-radius: 999px;
+    background: var(--surface-3); overflow: hidden; margin-top: 8px;
+  }
+  .progress span {
+    display: block; width: 72%; height: 100%;
+    background: var(--accent);
+  }
+  .quick-links {
+    display: flex; justify-content: space-between; gap: 10px;
+    color: var(--accent); font-weight: 500; font-size: 12px; margin-top: 11px;
+  }
+
+  /* label picker */
+  .label-picker {
+    display: grid; grid-template-columns: minmax(180px, 260px) 36px;
+    gap: 6px; align-items: end;
+  }
+  .label-input-wrap { position: relative; }
+  .label-picker input { min-width: 0; }
+  .label-add-btn {
+    width: 36px; height: 34px; border-radius: var(--r-sm);
+    padding: 0;
+    display: grid; place-items: center;
+    font-size: 18px; line-height: 1;
+    background: var(--surface);
+    color: var(--accent);
+    border: 1px solid var(--line-2);
+    box-shadow: none;
+  }
+  .label-add-btn:hover {
+    background: var(--accent-soft); color: var(--accent-2);
+    border-color: var(--accent-line);
+  }
+  .label-menu {
+    position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 30;
+    display: none; max-height: 240px; overflow: auto; padding: 5px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-2);
+  }
+  .label-menu.show { display: grid; gap: 2px; }
+  .label-option {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    width: 100%; min-height: 32px; padding: 6px 9px;
+    border: 0; border-radius: var(--r-sm);
+    background: transparent; color: var(--text);
+    font-size: 13px; font-weight: 500;
+    text-align: left; box-shadow: none;
+    cursor: pointer;
+  }
+  .label-option:hover, .label-option.active {
+    background: var(--accent-soft); color: var(--accent-2);
+  }
+  .label-option .count {
+    color: var(--muted); font-size: 12px; font-weight: 500;
+  }
+  .label-empty-option {
+    padding: 9px; color: var(--muted); font-size: 12px;
+  }
+
+  /* annotation row + thumb override */
+  .annot-row { grid-template-columns: 118px 1fr auto; padding: 10px; }
+  .annot-row .thumb { width: 118px; border-radius: var(--r-sm); }
+
+  /* work grid (kb id + actions) */
+  .work-grid {
+    display: grid; gap: 12px; margin-top: 8px;
+    grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+  }
+
+  /* toast */
+  .toast {
+    position: fixed; bottom: 20px; right: 20px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: 10px 14px; border-radius: var(--r-md);
+    max-width: 360px; font-size: 13px;
+    box-shadow: var(--shadow-2);
+    transform: translateY(8px); opacity: 0;
+    transition: transform .2s, opacity .2s;
+    z-index: 60;
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.ok { border-color: #c5e4d5; background: var(--ok-soft); color: var(--ok); }
+  .toast.warn { border-color: #e8d4a3; background: var(--warn-soft); color: var(--warn); }
+  .toast.err { border-color: #e7b6b2; background: var(--bad-soft); color: var(--bad); }
+  .empty { color: var(--muted); padding: 8px 2px; font-size: 12.5px; }
+  .loading { color: var(--muted); font-size: 12.5px; }
+
+  /* modal · video preview */
+  .modal-mask {
+    position: fixed; inset: 0;
+    background: rgba(17, 24, 39, .48);
+    backdrop-filter: blur(3px);
+    display: none; align-items: center; justify-content: center;
+    z-index: 50; padding: 24px;
+  }
+  .modal-mask.show { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    max-width: 920px; width: 100%; max-height: 90vh; overflow: hidden;
+    display: flex; flex-direction: column;
+    box-shadow: 0 16px 40px rgba(17, 24, 39, .18);
+  }
+  .modal-head {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+  }
+  .modal-head .title {
+    flex: 1; font-size: 13px; color: var(--text); font-weight: 600;
+    word-break: break-all;
+  }
+  .modal-head .clip-info { color: var(--muted); font-size: 12px; }
+  .modal-head .close {
+    background: var(--surface); border: 1px solid var(--line);
+    color: var(--muted); font-size: 16px;
+    cursor: pointer; padding: 0;
+    width: 28px; height: 28px; border-radius: var(--r-sm);
+    line-height: 1; box-shadow: none;
+  }
+  .modal-head .close:hover {
+    color: var(--bad); border-color: #e7b6b2; background: var(--bad-soft);
+  }
+  .modal video {
+    width: 100%; max-height: 70vh; background: #000; display: block;
+  }
+  .modal-foot {
+    padding: 10px 16px; font-size: 12px; color: var(--muted);
+    display: flex; justify-content: space-between; gap: 12px;
+    background: var(--surface-2);
+    border-top: 1px solid var(--line);
+  }
+
+  /* misc inline elements */
+  details summary {
+    cursor: pointer; color: var(--muted); font-size: 12px;
+    padding: 4px 0;
+  }
+  details summary:hover { color: var(--text-2); }
+  details[open] summary { color: var(--text-2); }
+  pre {
+    font-size: 11.5px; background: var(--surface-2);
+    padding: 10px; border-radius: var(--r-sm); overflow: auto;
+    margin: 6px 0 0; color: var(--text-2);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  }
+
+  /* responsive */
+  @media (max-width: 1100px) {
+    .app-shell { grid-template-columns: 1fr; }
+    .side-nav { position: static; height: auto; padding: 14px; }
+    .workspace { grid-template-columns: 1fr; }
+    .flow-steps { grid-template-columns: 1fr; }
+    .run-settings { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 640px) {
+    .app-main { padding: 16px; }
+    .topbar { flex-wrap: wrap; }
+    .status { margin-left: 0; }
+    .run-settings { grid-template-columns: 1fr; }
+    .metric-grid { grid-template-columns: 1fr 1fr; }
+  }
+
+  /* =========================================================
+     ONBOARDING · 4-step 单步引导
+     ========================================================= */
+  :root {
+    --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-in:     cubic-bezier(0.4, 0, 0.6, 1);
+    --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+    --dur-fast:    180ms;
+    --dur-mid:     320ms;
+    --dur-slow:    500ms;
+    --shadow-3:    0 20px 50px rgba(58, 85, 196, .12);
+  }
+
+  /* onboarding 模式下隐藏旧 sidebar / topbar / page-annotate 的 panel 化布局 */
+  body.ob-mode > .app-shell { display: none !important; }
+  body.ob-mode .side-nav { display: none; }
+  body.ob-mode .app-main { padding: 0; }
+  body.ob-mode .topbar { display: none; }
+  body.ob-mode #page-annotate.page.active { display: none !important; }
+  body.ob-mode #page-search.page.active { display: block; }
+
+  /* 语义检索独立视图:隐藏标注流程的进度条与舞台,
+     仅显示 ob-header + page-search。 */
+  body.ob-search-view > .app-shell { display: block !important; }
+  body.ob-search-view .app-main { padding: 0; }
+  body.ob-search-view .side-nav,
+  body.ob-search-view .topbar,
+  body.ob-search-view .ob-footer { display: none !important; }
+  body.ob-search-view #ob-progress,
+  body.ob-search-view .ob-stage,
+  body.ob-search-view #page-annotate { display: none !important; }
+  body.ob-search-view #page-search {
+    display: block !important;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 28px 80px;
+  }
+  @media (max-width: 720px) {
+    body.ob-search-view #page-search { padding: 16px 16px 80px; }
+  }
+
+  /* 文本/图片检索区分:左侧色条 + 标题 hint */
+  #page-search .search-mode {
+    border-left: 3px solid var(--accent);
+    padding: 12px 14px 14px 16px;
+    background: var(--surface);
+    border-radius: 0 8px 8px 0;
+    margin-bottom: 14px;
+  }
+  #page-search .search-mode[data-kind="image"] {
+    border-left-color: var(--ok, #16a34a);
+  }
+  #page-search .search-mode .mode-title {
+    display: flex; align-items: center; gap: 8px;
+    font-weight: 600; font-size: 14px; color: var(--text);
+    margin-bottom: 6px;
+  }
+  #page-search .search-mode .mode-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 22px; padding: 0 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; letter-spacing: .02em;
+    background: var(--accent-soft); color: var(--accent-2);
+  }
+  #page-search .search-mode[data-kind="image"] .mode-badge {
+    background: rgba(22,163,74,.12); color: #16a34a;
+  }
+  #page-search .search-mode .mode-hint {
+    color: var(--muted); font-size: 12.5px; line-height: 1.5;
+  }
+
+  /* === Header === */
+  .ob-header {
+    position: sticky; top: 0; z-index: 30;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 28px 0;
+  }
+  .ob-header-row {
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 14px;
+  }
+  .ob-brand {
+    display: flex; align-items: center; gap: 12px;
+    min-width: 0;
+  }
+  .ob-brand-mark {
+    position: relative;
+    flex: 0 0 auto;
+    width: 38px; height: 38px; border-radius: 10px;
+    background: var(--accent-soft); color: var(--accent);
+    border: 1px solid var(--accent-line);
+    display: grid; place-items: center;
+    box-shadow: 0 6px 16px rgba(58, 85, 196, .10);
+  }
+  .ob-brand-video {
+    position: relative;
+    width: 20px; height: 14px;
+    border: 2px solid currentColor;
+    border-radius: 4px;
+  }
+  .ob-brand-video::after {
+    content: "";
+    position: absolute;
+    top: 3px; left: 7px;
+    border-left: 6px solid currentColor;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+  }
+  .ob-brand-lens {
+    position: absolute;
+    right: 7px; bottom: 7px;
+    width: 10px; height: 10px;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+    background: var(--surface);
+  }
+  .ob-brand-lens::after {
+    content: "";
+    position: absolute;
+    width: 6px; height: 2px;
+    right: -5px; bottom: -3px;
+    background: currentColor;
+    border-radius: 999px;
+    transform: rotate(45deg);
+  }
+  .ob-brand-copy {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+  }
+  .ob-brand-title {
+    font-size: 20px; line-height: 1.15;
+    font-weight: 700; color: var(--text);
+    white-space: nowrap;
+  }
+  .ob-brand-sub {
+    color: var(--muted);
+    font-size: 13.5px;
+    line-height: 1.25;
+    white-space: nowrap;
+  }
+  .ob-header-actions {
+    margin-left: auto;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .ob-search-link {
+    height: 38px; padding: 0 16px;
+    background: var(--surface); color: var(--text-2);
+    border: 1px solid var(--line-2);
+    border-radius: var(--r-md);
+    font-size: 16px; font-weight: 650;
+    line-height: 1;
+    display: inline-flex; align-items: center; gap: 8px;
+    cursor: pointer;
+    transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+  }
+  .ob-search-link:hover {
+    background: var(--surface-2);
+    border-color: var(--line-2);
+    color: var(--text);
+  }
+  .ob-search-link-icon {
+    font-size: 14px;
+    line-height: 1;
+  }
+  .ob-status {
+    width: 34px; height: 34px;
+    padding: 0;
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    border-radius: 999px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--muted); font-size: 12.5px; font-weight: 600;
+    box-shadow: none;
+    overflow: hidden;
+    white-space: nowrap;
+    transition: width var(--dur-mid) var(--ease-out), padding var(--dur-mid) var(--ease-out), background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+  }
+  .ob-status:hover {
+    background: var(--surface-2);
+    border-color: var(--line-2);
+    color: var(--text-2);
+  }
+  .ob-status[aria-expanded="true"] {
+    width: auto;
+    padding: 0 12px;
+  }
+  .ob-status .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+  .ob-status .dot.ok { background: var(--ok); }
+  .ob-status .dot.bad { background: var(--bad); }
+  .ob-status-text {
+    max-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: max-width var(--dur-mid) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
+  }
+  .ob-status[aria-expanded="true"] .ob-status-text {
+    max-width: 180px;
+    opacity: 1;
+  }
+
+  /* === Progress bar === */
+  .ob-progress {
+    display: flex; align-items: center; gap: 0;
+    padding: 8px 0 18px;
+    max-width: 900px; margin: 0 auto;
+  }
+  .ob-step-marker {
+    flex: 0 0 auto;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .ob-step-dot {
+    width: 13px; height: 13px; border-radius: 50%;
+    background: var(--surface-3);
+    transition: background var(--dur-mid) var(--ease-out),
+                transform var(--dur-mid) var(--ease-spring),
+                box-shadow var(--dur-mid) var(--ease-out);
+  }
+  .ob-step-marker[data-state="done"] .ob-step-dot {
+    background: var(--ok);
+  }
+  .ob-step-marker[data-state="active"] .ob-step-dot {
+    background: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-soft);
+    animation: ob-pulse 2.4s ease-in-out infinite;
+  }
+  .ob-step-label {
+    font-size: 15px; color: var(--muted); font-weight: 600;
+    transition: color var(--dur-mid) var(--ease-out);
+  }
+  .ob-step-marker[data-state="done"] .ob-step-label { color: var(--ok); }
+  .ob-step-marker[data-state="active"] .ob-step-label { color: var(--accent); font-weight: 600; }
+  .ob-step-marker[data-state="idle"] { cursor: not-allowed; }
+  .ob-progress-line {
+    flex: 1; height: 3px;
+    background: var(--surface-3);
+    margin: 0 12px 24px;
+    border-radius: 999px;
+    overflow: hidden;
+    position: relative;
+  }
+  .ob-progress-line::after {
+    content: ""; position: absolute; inset: 0;
+    background: var(--ok);
+    transform-origin: left center;
+    transform: scaleX(0);
+    transition: transform var(--dur-slow) var(--ease-spring);
+  }
+  .ob-progress-line[data-filled="true"]::after { transform: scaleX(1); }
+
+  @keyframes ob-pulse {
+    0%, 100% { box-shadow: 0 0 0 4px var(--accent-soft); }
+    50%      { box-shadow: 0 0 0 7px var(--accent-soft); }
+  }
+
+  /* === Stage === */
+  .ob-stage {
+    position: relative;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 48px 28px 120px;
+    min-height: calc(100dvh - 220px);
+  }
+  .step-screen {
+    position: absolute;
+    inset: 48px 28px auto;
+    opacity: 0;
+    transform: translateX(32px);
+    pointer-events: none;
+    transition: opacity var(--dur-mid) var(--ease-out),
+                transform var(--dur-mid) var(--ease-spring);
+  }
+  /* active 步骤走正常流,撑开 .ob-stage 高度,
+     这样 details 展开等内部增高时,整页可滚 */
+  .step-screen[data-state="active"] {
+    position: relative;
+    inset: auto;
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
+    transition-delay: 80ms;
+  }
+  .step-screen[data-state="leaving-left"] {
+    opacity: 0;
+    transform: translateX(-32px);
+  }
+  .step-screen[data-state="leaving-right"] {
+    opacity: 0;
+    transform: translateX(32px);
+  }
+
+  .ob-step-head {
+    margin-bottom: 28px;
+  }
+  .ob-step-eyebrow {
+    color: var(--muted); font-size: 12px; font-weight: 500;
+    margin-bottom: 6px;
+  }
+  .ob-step-title {
+    font-size: 22px; font-weight: 600; color: var(--text);
+    line-height: 1.3; margin: 0 0 8px;
+    letter-spacing: -.005em;
+  }
+  .ob-step-sub {
+    color: var(--muted); font-size: 14px; line-height: 1.5;
+    margin: 0;
+    max-width: 56ch;
+  }
+
+  /* === Big dropzone (step 2) === */
+  .ob-dropzone {
+    border: 2px dashed var(--line-2);
+    background: var(--surface);
+    border-radius: var(--r-lg, 12px);
+    padding: 36px 28px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color var(--dur-fast) var(--ease-out),
+                background var(--dur-fast) var(--ease-out),
+                transform var(--dur-fast) var(--ease-out),
+                box-shadow var(--dur-fast) var(--ease-out);
+    position: relative;
+  }
+  .ob-dropzone:hover {
+    border-color: var(--accent-line);
+    background: var(--surface-2);
+  }
+  .ob-dropzone.dragover,
+  .ob-dropzone[data-active="true"] {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    transform: scale(1.005);
+    box-shadow: var(--shadow-3);
+  }
+  .ob-dropzone-icon {
+    width: 44px; height: 44px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-radius: 50%;
+    display: grid; place-items: center;
+    margin: 0 auto 14px;
+    font-size: 20px; font-weight: 600;
+  }
+  .ob-dropzone-title {
+    font-size: 14px; font-weight: 600; color: var(--text);
+    margin-bottom: 4px;
+  }
+  .ob-dropzone-sub {
+    color: var(--muted); font-size: 12.5px;
+  }
+  .ob-dropzone input[type="file"] {
+    position: absolute; inset: 0;
+    opacity: 0; cursor: pointer;
+  }
+
+  /* === Selected file row (step 2) === */
+  .ob-selected-file {
+    display: none;
+    align-items: center; gap: 12px;
+    padding: 14px 16px;
+    background: var(--ok-soft);
+    border: 1px solid #c5e4d5;
+    border-radius: var(--r-md);
+    margin-top: 12px;
+    animation: ob-slide-up var(--dur-mid) var(--ease-spring) both;
+  }
+  .ob-selected-file[data-show="true"] { display: flex; }
+  .ob-selected-file .check {
+    width: 20px; height: 20px; flex: 0 0 auto;
+    border-radius: 50%;
+    background: var(--ok); color: #fff;
+    display: grid; place-items: center;
+    font-size: 12px; font-weight: 700;
+  }
+  .ob-selected-file .name {
+    flex: 1; font-size: 13px; font-weight: 500; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ob-selected-file .clear {
+    background: transparent; border: 0; color: var(--muted);
+    cursor: pointer; padding: 4px 8px;
+    font-size: 14px; line-height: 1;
+    border-radius: var(--r-sm);
+    height: auto;
+  }
+  .ob-selected-file .clear:hover { background: var(--surface); color: var(--text); }
+
+  @keyframes ob-slide-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* === Existing video select (step 2) === */
+  .ob-or {
+    text-align: center;
+    color: var(--quiet); font-size: 12px;
+    margin: 16px 0 12px;
+    position: relative;
+  }
+  .ob-or::before, .ob-or::after {
+    content: ""; display: inline-block;
+    width: 60px; height: 1px;
+    background: var(--line);
+    vertical-align: middle;
+    margin: 0 12px;
+  }
+
+  /* === KB summary card (step 1) === */
+  .ob-kb-card {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: var(--r-md);
+    padding: 18px 20px;
+    margin-bottom: 16px;
+  }
+  .ob-kb-card-row {
+    display: flex; gap: 12px; align-items: end; flex-wrap: wrap;
+  }
+  .ob-kb-card-row > .field { flex: 1; min-width: 200px; }
+  .ob-kb-card-row > button { flex: 0 0 auto; }
+
+  /* === Run card (step 3) === */
+  .ob-run {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: var(--r-md);
+    padding: 22px;
+    text-align: center;
+  }
+  .ob-run-target {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    color: var(--muted); font-size: 13px; margin-bottom: 18px;
+  }
+  .ob-run-target b { color: var(--text); font-weight: 600; }
+  .ob-run-cta {
+    height: 44px; padding: 0 28px;
+    font-size: 14px; font-weight: 600;
+    border-radius: var(--r-md);
+  }
+
+  /* progress bar with sweep */
+  .ob-run-progress {
+    display: none;
+    height: 6px; border-radius: 999px;
+    background: var(--surface-3);
+    overflow: hidden;
+    margin: 18px 0 0;
+    position: relative;
+  }
+  .ob-run-progress[data-running="true"] { display: block; }
+  .ob-run-progress::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg,
+      var(--accent-soft) 0%,
+      var(--accent) 50%,
+      var(--accent-soft) 100%);
+    background-size: 200% 100%;
+    animation: ob-sweep 1.6s linear infinite;
+  }
+  @keyframes ob-sweep {
+    from { background-position: 200% 0; }
+    to   { background-position: -200% 0; }
+  }
+  .ob-run-stage {
+    display: none;
+    margin: 18px auto 0;
+    max-width: 560px;
+    text-align: left;
+    border: 1px solid var(--accent-line);
+    background: var(--accent-soft);
+    border-radius: var(--r-md);
+    padding: 13px 14px;
+  }
+  .ob-run-stage[data-show="true"] { display: block; }
+  .ob-run-stage-top {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    margin-bottom: 5px;
+  }
+  .ob-run-stage-title {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--accent-2);
+    font-size: 15px; font-weight: 700;
+  }
+  .ob-run-stage-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 4px rgba(58, 85, 196, .12);
+  }
+  .ob-run-stage-pct {
+    color: var(--accent-2);
+    font-size: 13px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .ob-run-stage-desc {
+    color: var(--text-2);
+    font-size: 12.5px;
+    line-height: 1.45;
+  }
+  .ob-run-stage-meta {
+    margin-top: 7px;
+    color: var(--muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* === Result list stagger (step 4) === */
+  .ob-result-list .annot-row {
+    opacity: 0;
+    transform: translateY(12px);
+    animation: ob-row-in var(--dur-mid) var(--ease-out) forwards;
+  }
+  .ob-result-list .annot-row:nth-child(1)  { animation-delay:  60ms; }
+  .ob-result-list .annot-row:nth-child(2)  { animation-delay: 120ms; }
+  .ob-result-list .annot-row:nth-child(3)  { animation-delay: 180ms; }
+  .ob-result-list .annot-row:nth-child(4)  { animation-delay: 240ms; }
+  .ob-result-list .annot-row:nth-child(5)  { animation-delay: 300ms; }
+  .ob-result-list .annot-row:nth-child(6)  { animation-delay: 360ms; }
+  .ob-result-list .annot-row:nth-child(7)  { animation-delay: 420ms; }
+  .ob-result-list .annot-row:nth-child(n+8) { animation-delay: 480ms; }
+  @keyframes ob-row-in {
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* === Footer nav === */
+  .ob-footer {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--surface);
+    border-top: 1px solid var(--line);
+    padding: 14px 28px;
+    z-index: 30;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .ob-footer-back {
+    height: 38px; padding: 0 16px;
+    background: transparent; color: var(--muted);
+    border: 0;
+    border-radius: var(--r-sm);
+    font-size: 13px; font-weight: 500;
+    transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+  }
+  .ob-footer-back:hover { background: var(--surface-2); color: var(--text); }
+  .ob-footer-back:disabled { opacity: 0; pointer-events: none; }
+  .ob-footer-spacer { flex: 1; }
+  .ob-footer-skip {
+    height: 38px; padding: 0 16px;
+    background: transparent; color: var(--muted);
+    border: 0; border-radius: var(--r-sm);
+    font-size: 13px;
+  }
+  .ob-footer-skip:hover { color: var(--text); }
+  .ob-footer-next {
+    height: 38px; padding: 0 22px;
+    background: var(--accent); color: #fff;
+    border: 0; border-radius: var(--r-sm);
+    font-size: 13.5px; font-weight: 600;
+    transition: background var(--dur-fast) var(--ease-out), transform 80ms var(--ease-out);
+  }
+  .ob-footer-next:hover { background: var(--accent-2); }
+  .ob-footer-next:active { transform: scale(0.97); }
+  .ob-footer-next:disabled {
+    background: var(--surface-3); color: var(--muted);
+    cursor: not-allowed; transform: none;
+  }
+
+  /* === Result page summary header === */
+  .ob-result-head {
+    display: flex; align-items: center; gap: 14px; margin-bottom: 18px;
+  }
+  .ob-result-badge {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: var(--ok-soft);
+    color: var(--ok);
+    display: grid; place-items: center;
+    font-size: 18px; font-weight: 700;
+  }
+  .ob-result-stat {
+    color: var(--muted); font-size: 13px;
+  }
+  .ob-result-stat b { color: var(--text); font-weight: 600; }
+  .ob-result-rejected {
+    color: var(--muted);
+    margin-left: 6px;
+  }
+
+  /* === Drawer === */
+  .ob-drawer {
+    position: fixed; inset: 0; z-index: 50;
+    display: none;
+    background: rgba(17, 24, 39, .35);
+    backdrop-filter: blur(2px);
+  }
+  .ob-drawer[data-open="true"] { display: block; animation: ob-fade-in var(--dur-fast) var(--ease-out); }
+  @keyframes ob-fade-in { from { opacity: 0; } to { opacity: 1; } }
+  .ob-drawer-panel {
+    position: absolute; right: 0; top: 0; bottom: 0;
+    width: clamp(300px, 66vw, 1080px);
+    background: var(--surface);
+    border-left: 1px solid var(--line);
+    box-shadow: -8px 0 32px rgba(17, 24, 39, .12);
+    overflow: auto;
+    transform: translateX(100%);
+    transition: transform var(--dur-mid) var(--ease-spring);
+  }
+  .ob-drawer[data-open="true"] .ob-drawer-panel { transform: translateX(0); }
+  .ob-drawer-head {
+    display: flex; align-items: center; gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; background: var(--surface); z-index: 1;
+  }
+  .ob-drawer-title { flex: 1; font-size: 14px; font-weight: 600; }
+  .ob-drawer-close {
+    background: transparent; color: var(--muted); border: 0;
+    width: 28px; height: 28px; padding: 0;
+    border-radius: var(--r-sm); font-size: 18px;
+  }
+  .ob-drawer-close:hover { background: var(--surface-2); color: var(--text); }
+  .ob-drawer-body { padding: 18px 20px; }
+
+  /* === Skip-jump confirm hint === */
+  .ob-resume-hint {
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-line);
+    border-radius: var(--r-md);
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    font-size: 12.5px;
+    color: var(--text-2);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .ob-resume-hint b { color: var(--accent); font-weight: 600; }
+  .ob-resume-hint button {
+    margin-left: auto;
+    height: 28px; padding: 0 12px;
+    font-size: 12px; background: var(--surface);
+    color: var(--accent); border: 1px solid var(--accent-line);
+  }
+  .ob-resume-hint button:hover { background: var(--accent-soft); }
+
+  /* === Reduced motion fallbacks === */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+    .step-screen[data-state="leaving-left"],
+    .step-screen[data-state="leaving-right"] {
+      transform: none;
+    }
+    .step-screen[data-state="active"] {
+      transform: none;
+    }
+    .ob-step-marker[data-state="active"] .ob-step-dot {
+      animation: none;
+      box-shadow: 0 0 0 4px var(--accent-soft);
+    }
+    .ob-run-progress::after { animation: none; background-position: 50% 0; }
+    .ob-result-list .annot-row { opacity: 1; transform: none; animation: none; }
+  }
+
+  @media (max-width: 720px) {
+    .ob-stage { padding: 32px 16px 140px; }
+    .step-screen { inset: 32px 16px auto; }
+    .ob-header { padding: 14px 20px 0; }
+    .ob-header-row { align-items: flex-start; gap: 12px; }
+    .ob-header-actions { gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .ob-brand-title { font-size: 19px; }
+    .ob-brand-sub { font-size: 13px; }
+    .ob-search-link { height: 38px; padding: 0 16px; }
+    .ob-progress-line { margin: 0 6px 24px; }
+  }
+</style>
+
+</head>
+<body class="ob-mode">
+
+<header class="ob-header">
+  <div class="ob-header-row">
+    <div class="ob-brand">
+      <div class="ob-brand-mark" aria-hidden="true">
+        <span class="ob-brand-video"></span>
+        <span class="ob-brand-lens"></span>
+      </div>
+      <div class="ob-brand-copy">
+        <div class="ob-brand-title">Vision RAG</div>
+        <div class="ob-brand-sub">视频检索与高光标注</div>
+      </div>
+    </div>
+    <div class="ob-header-actions">
+      <button class="ob-search-link" id="ob-open-search" type="button">
+        <span class="ob-search-link-icon">⌕</span><span>视频检索</span>
+      </button>
+      <button class="ob-search-link" id="ob-open-ingest" type="button">
+        <span>+ 视频入库</span>
+      </button>
+      <button class="ob-status" id="ob-status-toggle" type="button" aria-label="连接状态" aria-expanded="false">
+        <span id="ob-status-dot" class="dot bad"></span>
+        <span id="ob-status-text" class="ob-status-text">checking…</span>
+      </button>
+    </div>
+  </div>
+  <div class="ob-progress" id="ob-progress">
+    <span class="ob-step-marker" data-step="kb"     data-state="active">
+      <span class="ob-step-dot"></span><span class="ob-step-label">知识库</span>
+    </span>
+    <span class="ob-progress-line" data-segment="1"></span>
+    <span class="ob-step-marker" data-step="video"  data-state="idle">
+      <span class="ob-step-dot"></span><span class="ob-step-label">选择视频</span>
+    </span>
+    <span class="ob-progress-line" data-segment="2"></span>
+    <span class="ob-step-marker" data-step="run"    data-state="idle">
+      <span class="ob-step-dot"></span><span class="ob-step-label">运行标注</span>
+    </span>
+    <span class="ob-progress-line" data-segment="3"></span>
+    <span class="ob-step-marker" data-step="result" data-state="idle">
+      <span class="ob-step-dot"></span><span class="ob-step-label">结果</span>
+    </span>
+  </div>
+</header>
+
+<main class="ob-stage" id="ob-stage">
+  <!-- Step 1 · KB -->
+  <section class="step-screen" data-step="kb" data-state="active">
+    <div class="ob-step-head">
+      <div class="ob-step-eyebrow">第一步</div>
+      <h2 class="ob-step-title">选择或创建知识库</h2>
+      <p class="ob-step-sub">告诉系统什么样的画面才算"高光"。同一份知识库可被反复使用。</p>
+    </div>
+    <div id="ob-resume-hint" class="ob-resume-hint" style="display:none">
+      <span>检测到上次使用的知识库 <b id="ob-resume-name"></b>,可以直接</span>
+      <button id="ob-resume-jump" type="button">跳到选择视频 →</button>
+    </div>
+    <div class="ob-kb-card" id="ob-kb-slot">
+      <!-- KB id 输入行 + summary 由 JS 从 page-annotate 的 work-grid + #kb-summary move 进来 -->
+    </div>
+
+    <details style="margin-top:16px">
+      <summary>添加样例(可选)</summary>
+      <div id="ob-samples-slot" style="margin-top:14px">
+        <!-- JS 会把原 page-annotate 里的样例添加 panel 内容 move 进来 -->
+      </div>
+    </details>
+  </section>
+
+  <!-- Step 2 · Video -->
+  <section class="step-screen" data-step="video" data-state="idle" style="display:none">
+    <div class="ob-step-head">
+      <div class="ob-step-eyebrow">第二步</div>
+      <h2 class="ob-step-title">选择要标注的视频</h2>
+      <p class="ob-step-sub">拖入新文件直接临时标注,不会进入入库列表。也可以从已入库视频里选。</p>
+    </div>
+
+    <label class="ob-dropzone" id="ob-dropzone" for="annot-upload-file">
+      <div class="ob-dropzone-icon">↑</div>
+      <div class="ob-dropzone-title">拖入视频或点击选择</div>
+      <div class="ob-dropzone-sub">支持 MP4 / MOV · 选择后将临时切片、嵌入并标注</div>
+      <!-- annot-upload-file 由 JS move 到这里 -->
+      <span id="ob-annot-upload-slot"></span>
+    </label>
+
+    <div class="ob-selected-file" id="ob-selected-file">
+      <span class="check">✓</span>
+      <span class="name" id="ob-selected-name">已选择文件</span>
+      <button class="clear" id="ob-clear-file" type="button">×</button>
+    </div>
+
+    <div class="ob-or">或</div>
+
+    <details style="margin-top:0">
+      <summary>从已入库视频选择</summary>
+      <div style="margin-top:12px" id="ob-annot-video-slot">
+        <!-- annot-video select move 到这里 -->
+      </div>
+    </details>
+  </section>
+
+  <!-- Step 3 · Run -->
+  <section class="step-screen" data-step="run" data-state="idle" style="display:none">
+    <div class="ob-step-head">
+      <div class="ob-step-eyebrow">第三步</div>
+      <h2 class="ob-step-title">运行标注</h2>
+      <p class="ob-step-sub">推荐参数已就绪。运行约 7-13 秒(取决于视频长度和模型负载)。</p>
+    </div>
+
+    <div class="ob-run">
+      <div class="ob-run-target">
+        当前知识库 <b id="ob-run-kb">—</b> · 目标视频 <b id="ob-run-video">—</b>
+      </div>
+      <button id="ob-run-cta" class="ob-run-cta" type="button">开始标注</button>
+      <div id="ob-run-progress" class="ob-run-progress" data-running="false"></div>
+      <div id="ob-run-stage" class="ob-run-stage" data-show="false">
+        <div class="ob-run-stage-top">
+          <div class="ob-run-stage-title">
+            <span class="ob-run-stage-dot"></span>
+            <span id="ob-run-stage-title">准备提交任务</span>
+          </div>
+          <div id="ob-run-stage-pct" class="ob-run-stage-pct">0%</div>
+        </div>
+        <div id="ob-run-stage-desc" class="ob-run-stage-desc">即将把当前知识库和目标视频提交给标注流水线。</div>
+        <div id="ob-run-stage-meta" class="ob-run-stage-meta">通常需要 7-13 秒，长视频会更久。</div>
+      </div>
+      <div id="ob-run-status" class="loading" style="margin-top:12px;display:none"></div>
+      <div id="ob-run-warn" class="kb-banner empty" style="display:none;margin-top:10px;text-align:left"></div>
+    </div>
+
+    <details style="margin-top:18px" id="ob-advanced">
+      <summary>高级参数(默认即可,按需调整)</summary>
+      <div id="ob-advanced-slot" style="margin-top:14px">
+        <!-- run-settings + 精度开关 move 进来 -->
+      </div>
+    </details>
+
+    <div style="margin-top:24px;text-align:center">
+      <button id="ob-bytedance-toggle" class="ob-search-link" type="button" style="font-size:12px">
+        或用字节 MediaKit 漫剧分析
+      </button>
+    </div>
+    <div id="ob-bytedance-slot" style="margin-top:14px;display:none">
+      <!-- bytedance markup move 进来 -->
+    </div>
+  </section>
+
+  <!-- Step 4 · Result -->
+  <section class="step-screen" data-step="result" data-state="idle" style="display:none">
+    <div class="ob-step-head">
+      <div class="ob-step-eyebrow">完成</div>
+      <h2 class="ob-step-title">标注完成</h2>
+    </div>
+    <div class="ob-result-head">
+      <div class="ob-result-badge">✓</div>
+      <div class="ob-result-stat">
+        共找到 <b id="ob-result-count">0</b> 个高光段
+        <span id="ob-result-rejected" class="ob-result-rejected" style="display:none"></span>
+        · 用时 <b id="ob-result-time">—</b>
+      </div>
+    </div>
+    <div id="ob-result-slot" class="ob-result-list">
+      <!-- annot-results move 进来,继承 stagger 入场动画 -->
+    </div>
+  </section>
+</main>
+
+<footer class="ob-footer">
+  <button class="ob-footer-back" id="ob-back" type="button" disabled>← 返回</button>
+  <span class="ob-footer-spacer"></span>
+  <button class="ob-footer-skip" id="ob-skip" type="button">跳过</button>
+  <button class="ob-footer-next" id="ob-next" type="button" disabled>继续 →</button>
+</footer>
+
+<!-- 视频入库抽屉 -->
+<div class="ob-drawer" id="ob-ingest-drawer" data-open="false">
+  <div class="ob-drawer-panel">
+    <div class="ob-drawer-head">
+      <span class="ob-drawer-title">视频入库</span>
+      <button class="ob-drawer-close" id="ob-ingest-drawer-close" type="button">×</button>
+    </div>
+    <div class="ob-drawer-body" id="ob-ingest-slot">
+      <!-- ingest 区(包含 ingest-file / 入库队列)move 进来 -->
+    </div>
+  </div>
+</div>
+
+<!-- 旧 sidebar / topbar / page-annotate / page-search 仍存在,JS 仍可访问。
+     ob-mode 下被 CSS 隐藏,显示 onboarding。 -->
+<div class="app-shell">
+<aside class="side-nav">
+  <div class="brand">
+    <div class="brand-mark">VR</div>
+    <div>
+      <div class="brand-title">Vision RAG</div>
+      <div class="brand-sub">视频检索与高光标注</div>
+    </div>
+  </div>
+
+  <nav class="work-nav">
+    <div class="nav-tab" data-page="search"><span class="nav-icon">⌕</span><span>语义检索</span></div>
+    <div class="nav-tab active" data-page="annotate"><span class="nav-icon">◆</span><span>高光工作台</span><span class="nav-live"></span></div>
+  </nav>
+
+  <div class="side-kb">
+    <div class="eyebrow">当前知识库</div>
+    <div class="side-kb-name" id="side-kb-name">director-highlight</div>
+    <div class="side-kb-stats">
+      <div class="side-stat"><b id="side-kb-samples">36</b><span>样例</span></div>
+      <div class="side-stat"><b id="side-kb-labels">10</b><span>标签</span></div>
+      <div class="side-stat"><b id="side-kb-hits">4</b><span>命中</span></div>
+    </div>
+  </div>
+</aside>
+
+<div class="app-main">
+<div class="topbar">
+  <div class="title-block">
+    <h1>高光标注工作台</h1>
+    <p>按“入库视频 → 补充样例 → 运行标注 → 复核片段”的顺序完成一次高光筛选。</p>
+  </div>
+  <div class="status"><span id="status-dot" class="dot bad"></span><span id="status-text">checking…</span></div>
+  <button class="export-btn" type="button">导出结果</button>
+</div>
+
+<main id="page-search" class="page">
+
+  <!-- 搜索 -->
+  <section class="panel">
+    <div class="panel-head"><div><div class="panel-title">语义检索</div><div class="panel-note">用文本或图片检索已入库视频片段。</div></div></div>
+    <div class="panel-body">
+    <div class="tabs search-tabs" role="tablist" aria-label="语义检索模式">
+      <div class="tab active" data-tab="text" role="tab" aria-selected="true" tabindex="0">
+        <span class="search-tab-icon">T</span>
+        <span class="search-tab-copy">
+          <span class="search-tab-title">文本检索</span>
+          <span class="search-tab-desc">输入一句描述，按语义找片段</span>
+        </span>
+      </div>
+      <div class="tab" data-tab="image" role="tab" aria-selected="false" tabindex="0">
+        <span class="search-tab-icon">IMG</span>
+        <span class="search-tab-copy">
+          <span class="search-tab-title">图片检索</span>
+          <span class="search-tab-desc">上传参考图，找相似画面</span>
+        </span>
+      </div>
+    </div>
+
+    <div class="tab-panel active" data-panel="text">
+      <div class="search-mode" data-kind="text">
+        <div class="mode-title">
+          <span class="mode-badge">文本</span>
+          用一句中文/英文描述画面内容
+        </div>
+        <div class="mode-hint">例如:"一个人在跑步" / "red sports car on highway" — 适合根据剧情/动作语义召回片段。</div>
+      </div>
+      <div class="row">
+        <input id="q-text" type="text" placeholder="例如：一个人在跑步 / red sports car on highway" />
+        <div class="field" style="flex:0 0 90px">
+          <label>Top-K</label>
+          <input id="q-topk" type="number" min="1" max="50" value="10" />
+        </div>
+        <div class="field" style="flex:0 0 200px">
+          <label>精排模式
+            <span class="tip" title="off=不重排, 直接用召回顺序 / 片段合并=快, 把重叠/相邻片段拼一段 / Qwen2-VL=慢, 用多模态 LLM 对中间帧打分(真精排)">?</span>
+          </label>
+          <select id="q-rerank-mode">
+            <option value="merge" selected>片段合并 (推荐, &lt;1s)</option>
+            <option value="internvl">Qwen2-VL 精排 (慢, 真精排)</option>
+            <option value="off">off (直接出召回结果)</option>
+          </select>
+        </div>
+        <button id="btn-search-text" style="align-self:flex-end">搜索</button>
+      </div>
+    </div>
+
+    <div class="tab-panel" data-panel="image">
+      <div class="search-mode" data-kind="image">
+        <div class="mode-title">
+          <span class="mode-badge">图片</span>
+          上传一张参考图,找视觉相似的视频片段
+        </div>
+        <div class="mode-hint">适合"以图搜图"场景:产品图/截图/海报 — 用图像编码器检索画面接近的片段。注意:不支持 Qwen2-VL 精排(需要文本 query)。</div>
+      </div>
+      <div class="row">
+        <div class="file-picker" data-file-picker style="flex: 1 1 280px;">
+          <button type="button" class="file-picker-btn" data-file-trigger="q-image">选择图片</button>
+          <div class="file-picker-name" data-file-name-for="q-image" data-empty="未选择图片">未选择图片</div>
+          <input id="q-image" class="file-input-hidden" type="file" accept="image/*" />
+        </div>
+        <div class="field" style="flex:0 0 90px">
+          <label>Top-K</label>
+          <input id="q-image-topk" type="number" min="1" max="50" value="10" />
+        </div>
+        <div class="field" style="flex:0 0 200px">
+          <label>精排模式
+            <span class="tip" title="图片搜索只支持 片段合并 / off (Qwen2-VL 需要文本 query)">?</span>
+          </label>
+          <select id="q-image-rerank-mode">
+            <option value="merge" selected>片段合并 (推荐)</option>
+            <option value="off">off (直接出召回结果)</option>
+          </select>
+        </div>
+        <button id="btn-search-image" style="align-self:flex-end">搜索</button>
+      </div>
+    </div>
+
+    <div id="results" class="grid" style="margin-top:14px"></div>
+    <div id="results-empty" class="empty">在上方输入 query 开始检索。</div>
+    <div id="timing" class="timing-panel" style="display:none"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <div class="panel-title">视频入库</div>
+        <div class="panel-note">检索前可直接上传视频，完成后会进入同一个已入库视频列表。</div>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="upload-box">
+        <div class="upload-icon">↑</div>
+        <div>
+          <strong>选择视频并入库</strong>
+          <div class="muted small">支持批量上传；入库完成后即可在上方检索。</div>
+        </div>
+        <div class="file-picker" data-file-picker style="width: 100%; max-width: 100%;">
+          <button type="button" class="file-picker-btn" data-file-trigger="search-ingest-file">选择视频</button>
+          <div class="file-picker-name" data-file-name-for="search-ingest-file" data-empty="未选择任何文件">未选择任何文件</div>
+          <input id="search-ingest-file" class="file-input-hidden" type="file" accept="video/*" multiple />
+        </div>
+      </div>
+      <div class="switch-row">
+        <div>
+          <strong>跳过已入库视频</strong>
+          <div class="muted small">同一视频已存在时直接复用向量。</div>
+        </div>
+        <label class="switch-line"><input type="checkbox" id="search-ingest-skip" checked> 开启</label>
+      </div>
+      <div class="switch-row">
+        <div>
+          <strong>使用 qwen3.5-plus 推理切分</strong>
+          <div class="muted small">
+            勾选: 上传到 TOS → qwen3.5-plus 推理高光时间戳 → 按时间戳切片入库。
+            适合漫剧/长视频, 单次 30s-2min。
+          </div>
+        </div>
+        <label class="switch-line"><input type="checkbox" id="search-ingest-llm-segments"> 开启</label>
+      </div>
+      <div class="switch-row">
+        <div>
+          <strong>使用本地 Qwen2-VL 推理切分</strong>
+          <div class="muted small">
+            不上传云端。本机用 6s 窗口 / 3s 步长扫描高光，再按时间戳切片入库。
+          </div>
+        </div>
+        <label class="switch-line"><input type="checkbox" id="search-ingest-local-vlm-segments"> 开启</label>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button id="btn-search-ingest">上传并入库</button>
+        <button id="btn-search-ingest-cancel" class="secondary" style="display:none">取消剩余</button>
+        <div id="search-ingest-status" class="loading" style="display:none"></div>
+      </div>
+      <div id="search-ingest-queue" class="ingest-queue" style="margin-top:10px;display:none"></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ============== 视频高光标注页 ============== -->
+<main id="page-annotate" class="page active">
+<div class="workspace">
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <div class="panel-title">一次标注流程</div>
+      <div class="panel-note">当前目标视频、知识库、样例和标注按钮都在同一个工作台内。</div>
+    </div>
+  </div>
+  <div class="panel-body">
+    <div class="flow-steps">
+      <div class="flow-step active" data-work-step="ingest">
+        <div class="flow-step-top"><div class="flow-num">1</div><span>准备</span></div>
+        <strong>视频入库</strong>
+        <span>上传视频并生成片段向量</span>
+      </div>
+      <div class="flow-step" data-work-step="samples">
+        <div class="flow-step-top"><div class="flow-num">2</div><span>当前</span></div>
+        <strong>样例准备</strong>
+        <span>选择知识库并补充高光样例</span>
+      </div>
+      <div class="flow-step" data-work-step="annotate">
+        <div class="flow-step-top"><div class="flow-num">3</div><span>输出</span></div>
+        <strong>运行标注</strong>
+        <span>复核可播放的高光片段</span>
+      </div>
+    </div>
+
+    <div class="step-panel active" data-step-panel="ingest">
+    <div class="step-panel-title">
+      <div>
+        <h3>视频入库</h3>
+        <p>先把待处理视频变成可检索、可标注的片段向量。</p>
+      </div>
+    </div>
+    <div class="upload-box">
+      <div class="upload-icon">↑</div>
+      <div>
+        <strong>拖入视频或选择文件入库</strong>
+        <div class="muted small">支持批量上传，任务会串行执行以避免显存争抢。</div>
+      </div>
+      <div class="file-picker" data-file-picker style="width: 100%; max-width: 100%;">
+        <button type="button" class="file-picker-btn" data-file-trigger="ingest-file">选择视频</button>
+        <div class="file-picker-name" data-file-name-for="ingest-file" data-empty="未选择任何文件">未选择任何文件</div>
+        <input id="ingest-file" class="file-input-hidden" type="file" accept="video/*" multiple />
+      </div>
+    </div>
+
+    <div class="switch-row">
+      <div>
+        <strong>跳过已入库视频</strong>
+        <div class="muted small">同一视频已存在时直接复用向量，不重复处理。</div>
+      </div>
+      <label class="switch-line"><input type="checkbox" id="ingest-skip" checked> 开启</label>
+    </div>
+    <div class="switch-row">
+      <div>
+        <strong>使用 qwen3.5-plus 推理切分</strong>
+        <div class="muted small">
+          勾选后自动: 上传到 TOS → 让 qwen3.5-plus 推理高光片段时间戳 → 按时间戳切片入库。
+          适合漫剧/长视频高光抽取, 单次需要 30s-2min。
+        </div>
+      </div>
+      <label class="switch-line"><input type="checkbox" id="ingest-llm-segments"> 开启</label>
+    </div>
+    <div class="switch-row">
+      <div>
+        <strong>使用本地 Qwen2-VL 推理切分</strong>
+        <div class="muted small">
+          不上传云端。本机用 6s 窗口 / 3s 步长扫描高光，再按时间戳切片入库。
+        </div>
+      </div>
+      <label class="switch-line"><input type="checkbox" id="ingest-local-vlm-segments"> 开启</label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="btn-ingest">上传并入库</button>
+      <button id="btn-ingest-cancel" class="secondary" style="display:none">取消剩余</button>
+    <div id="ingest-status" class="loading" style="display:none"></div>
+    </div>
+    <div id="ingest-queue" class="ingest-queue" style="margin-top:10px;display:none"></div>
+    <section class="panel" style="margin-top:16px">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">入库队列</div>
+          <div class="panel-note">上传后立即显示进度和处理状态。</div>
+        </div>
+        <button class="secondary" id="btn-refresh-videos">刷新</button>
+      </div>
+      <div class="panel-body">
+        <div id="videos" class="videos-list"></div>
+      </div>
+    </section>
+    </div>
+
+  <!-- 知识库管理 -->
+    <div class="step-panel" data-step-panel="samples">
+    <div class="step-panel-title">
+      <div>
+        <h3>样例准备</h3>
+        <p>选择知识库，补充样例，并检查标签样例数是否足够稳定。</p>
+      </div>
+    </div>
+    <div class="work-grid">
+      <div class="field label-picker">
+        <div class="label-input-wrap">
+          <label>知识库
+            <span class="tip" title="点输入框选择已有知识库;点右侧 + 新建一个。一个客户/项目一个知识库,建议英文,如 sports-highlights">?</span>
+          </label>
+          <input id="kb-id" type="text" autocomplete="off" placeholder="点击选择已有知识库 / 输入新名称" />
+          <div class="label-menu" data-label-menu-for="kb-id"></div>
+        </div>
+        <button class="label-add-btn" type="button" id="btn-kb-new" title="新建知识库">+</button>
+      </div>
+      <div class="field" style="visibility:hidden;height:0;margin:0;padding:0">
+        <button id="btn-kb-load" type="button" hidden>加载</button>
+      </div>
+    </div>
+    <div id="kb-summary" class="kb-summary" style="display:none"></div>
+
+  <!-- 添加样例 -->
+    <div style="margin-top:16px">
+    <div class="panel-title">添加高光样例</div>
+    <div class="panel-note">告诉系统“什么样的画面才算高光”。样例入口和当前知识库状态放在一起，减少来回跳转。</div>
+    <div id="kb-banner-sample" class="kb-banner empty">
+      <span>还没选择知识库。</span>
+      <b id="kb-banner-sample-name"></b>
+      <span class="link" id="kb-banner-sample-link">先到上面输入知识库 ID 并加载</span>
+    </div>
+    <div class="tabs">
+      <div class="tab active" data-sampletab="text">文字描述</div>
+      <div class="tab" data-sampletab="clip">已入库视频片段</div>
+      <div class="tab" data-sampletab="image">上传图片</div>
+    </div>
+
+    <div class="tab-panel active" data-samplepanel="text">
+      <div class="row">
+        <div class="field label-picker">
+          <div class="label-input-wrap">
+          <label>高光类型 / 标签
+            <span class="tip" title="想给这段高光打的标签，例如：进球、明星出场、产品特写">?</span>
+          </label>
+          <input id="sample-text-label" class="sample-label-input" type="text" autocomplete="off" placeholder="选择已有标签或输入新标签" />
+          <div class="label-menu" data-label-menu-for="sample-text-label"></div>
+          </div>
+          <button class="label-add-btn" type="button" data-label-target="sample-text-label" title="新增标签">+</button>
+        </div>
+        <div class="field">
+          <label>文字描述
+            <span class="tip" title="CLIP 用英文描述效果更好，例如 'a soccer player scoring a goal'">?</span>
+          </label>
+          <input id="sample-text-text" type="text" placeholder="a soccer player scoring a goal" />
+        </div>
+        <button id="btn-sample-text">添加</button>
+      </div>
+    </div>
+
+    <div class="tab-panel" data-samplepanel="clip">
+      <div class="row">
+        <div class="field label-picker">
+          <div class="label-input-wrap">
+          <label>高光类型 / 标签
+            <span class="tip" title="选好下面的片段后, 一键全部导入到这个标签下">?</span>
+          </label>
+          <input id="sample-clip-label" class="sample-label-input" type="text" autocomplete="off" placeholder="选择已有标签或输入新标签" />
+          <div class="label-menu" data-label-menu-for="sample-clip-label"></div>
+          </div>
+          <button class="label-add-btn" type="button" data-label-target="sample-clip-label" title="新增标签">+</button>
+        </div>
+        <div class="field">
+          <label>选择视频
+            <span class="tip" title="切换视频会自动加载该视频的所有片段缩略图">?</span>
+          </label>
+          <select id="sample-clip-video"></select>
+        </div>
+        <button id="btn-sample-clip-import" style="align-self:flex-end" disabled>导入选中 (0)</button>
+      </div>
+      <div class="empty" id="clip-grid-empty" style="margin-top:8px">选个视频, 点"加载片段"查看缩略图.</div>
+      <div id="clip-grid" class="clip-grid" style="margin-top:10px"></div>
+
+      <details style="margin-top:10px">
+        <summary>手动模式 (按起止时间)</summary>
+        <div class="row" style="margin-top:8px">
+          <div class="field" style="flex:0 0 90px">
+            <label>起 (秒)</label>
+            <input id="sample-clip-start" type="number" min="0" step="0.1" placeholder="0" />
+          </div>
+          <div class="field" style="flex:0 0 90px">
+            <label>止 (秒)</label>
+            <input id="sample-clip-end" type="number" min="0" step="0.1" placeholder="10" />
+          </div>
+          <button id="btn-sample-clip">添加</button>
+        </div>
+      </details>
+    </div>
+
+    <div class="tab-panel" data-samplepanel="image">
+      <div class="row">
+        <div class="field label-picker">
+          <div class="label-input-wrap">
+          <label>高光类型 / 标签</label>
+          <input id="sample-image-label" class="sample-label-input" type="text" autocomplete="off" placeholder="选择已有标签或输入新标签" />
+          <div class="label-menu" data-label-menu-for="sample-image-label"></div>
+          </div>
+          <button class="label-add-btn" type="button" data-label-target="sample-image-label" title="新增标签">+</button>
+        </div>
+        <div class="field">
+          <label>上传图片</label>
+          <div class="file-picker" data-file-picker>
+            <button type="button" class="file-picker-btn" data-file-trigger="sample-image-file">选择图片</button>
+            <div class="file-picker-name" data-file-name-for="sample-image-file" data-empty="未选择图片">未选择图片</div>
+            <input id="sample-image-file" class="file-input-hidden" type="file" accept="image/*" />
+          </div>
+        </div>
+        <button id="btn-sample-image">添加</button>
+      </div>
+    </div>
+    </div>
+
+  <!-- 样例列表 -->
+    <div style="margin-top:16px">
+    <div class="panel-head" style="padding-left:0;padding-right:0;border-bottom:0">
+      <div><div class="panel-title">已收集的样例
+      <span class="hint" id="samples-hint"></span>
+      </div><div class="panel-note">最多显示当前列表内容，过多样例可通过标签筛选。</div></div>
+      <div class="row" style="gap:8px">
+        <button class="secondary" id="btn-auto-kb-run" title="把所有 LLM 推理出的高光自动聚类 + 命名 + 写入 auto_llm 知识库">高光归纳</button>
+        <button class="secondary" id="btn-samples-refresh">刷新</button>
+      </div>
+    </div>
+    <div id="auto-kb-status" class="muted small" style="margin-top:6px;display:none"></div>
+    <div id="samples" class="sample-list"></div>
+    </div>
+    <section class="panel" style="margin-top:16px">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">运行前检查</div>
+          <div class="panel-note">把风险信息放在样例准备阶段确认，避免运行标注时才发现问题。</div>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="metric-grid">
+          <div class="metric"><b id="metric-total-samples">159</b><span>总样例</span></div>
+          <div class="metric"><b id="metric-kb-samples">36</b><span>当前知识库样例</span></div>
+          <div class="metric"><b id="metric-kb-labels">10</b><span>标签类别</span></div>
+          <div class="metric"><b id="metric-last-cost">16s</b><span>上次耗时</span></div>
+        </div>
+        <div class="warning" style="margin-top:12px;">
+          <strong>!</strong>
+          <div>部分标签只有 1 个样例。建议每个标签至少 3 个，z-score 归一会更稳定。</div>
+        </div>
+        <div class="health-list">
+          <div class="health-item"><span class="health-dot"></span><span>Qdrant 主索引</span><span class="health-pill">正常</span></div>
+          <div class="health-item"><span class="health-dot"></span><span>视频已入库</span><span class="health-pill" id="video-count-pill">加载中</span></div>
+          <div class="health-item"><span class="health-dot warn"></span><span>标签样例数</span><span class="health-pill warn">需补充</span></div>
+        </div>
+      </div>
+    </section>
+    </div>
+
+  <!-- 标注 -->
+    <div class="step-panel" data-step-panel="annotate">
+    <div class="run-card">
+    <div class="run-head">
+      <div>
+        <strong>运行高光标注</strong>
+        <div class="muted small">推荐参数已填好，只需要确认目标视频和精化开关。</div>
+      </div>
+    </div>
+    <div id="kb-banner-annot" class="kb-banner empty">
+      <span>还没选择知识库。</span>
+      <b id="kb-banner-annot-name"></b>
+      <span class="link" id="kb-banner-annot-link">先到上面选择知识库并添加样例</span>
+    </div>
+    <div class="run-settings">
+      <div class="field target-video-card">
+        <label>目标视频
+          <span class="tip" title="可直接选择本地视频上传临时标注；不进入入库视频列表。也可从已入库视频中选择。">?</span>
+        </label>
+        <div class="target-video-actions">
+          <div class="file-picker" data-file-picker>
+            <button type="button" class="file-picker-btn" data-file-trigger="annot-upload-file">选择视频</button>
+            <div class="file-picker-name" data-file-name-for="annot-upload-file" data-empty="未选择视频">未选择视频</div>
+            <input id="annot-upload-file" class="file-input-hidden" type="file" accept="video/*" />
+          </div>
+          <div class="target-upload-line">
+            <span>或选择已入库视频</span>
+          </div>
+          <select id="annot-video"></select>
+          <div id="annot-target-note" class="target-mode-note">选择本地文件后会直接临时切分、嵌入并标注，不入库。</div>
+        </div>
+      </div>
+    </div>
+    <details class="run-advanced">
+      <summary>高级参数（默认即可，按需调整）</summary>
+      <div class="run-advanced-grid">
+        <div class="field">
+          <label>相对阈值 (σ)
+            <span class="tip" title="z-score 阈值: 候选段必须超过知识库内同 label 均值 N 个标准差。1.0 推荐, 漏检调低 (0.5), 误检调高 (1.5)">?</span>
+          </label>
+          <input id="annot-zth" type="number" min="0" max="5" step="0.05" value="0.75" />
+        </div>
+        <div class="field">
+          <label>绝对最低分
+            <span class="tip" title="兜底门: COSINE 分数低于此值即使超均值也不要。一般 0.05~0.10。">?</span>
+          </label>
+          <input id="annot-threshold" type="number" min="0" max="1" step="0.01" value="0.05" />
+        </div>
+        <div class="field">
+          <label>每片段 Top-K
+            <span class="tip" title="每个视频片段在知识库里查多少个最相似的样例。一般 3~10。">?</span>
+          </label>
+          <input id="annot-topk" type="number" min="1" max="50" value="5" />
+        </div>
+        <div class="field">
+          <label>精度开关</label>
+          <div class="row" style="gap:14px">
+            <label class="switch-line"><input type="checkbox" id="annot-normalize" checked> z-score</label>
+            <label class="switch-line" title="对 Qdrant/高光库召回候选调用本地 Qwen2-VL, 判断是否高光, 生成理由/标签/剪辑建议, 并按 Qwen 分数与召回分融合重排序。首次加载会较慢。"><input type="checkbox" id="annot-vl-rerank" checked> 本地 Qwen2-VL 重排序</label>
+            <label class="switch-line" title="额外先用本地 Qwen2-VL 对整条视频滑窗理解并切出候选高光时间段。更慢, 适合召回漏掉高光时。"><input type="checkbox" id="annot-local-vlm-segments"> 本地 Qwen2-VL 理解切分</label>
+            <label class="switch-line" title="仅勾选时调用云端 qwen3.5-plus 做视频高光时间戳切分；默认关闭。"><input type="checkbox" id="annot-cloud-llm"> 云端 qwen3.5-plus 切分</label>
+          </div>
+        </div>
+        <div class="field">
+          <label>Qwen 候选数
+            <span class="tip" title="兼容旧参数。现在开启本地 Qwen2-VL 重排序时会判断全部最终候选, 并把拒绝候选单独分组。本地 Qwen2-VL 理解切分只有额外勾选时才会运行。">?</span>
+          </label>
+          <input id="annot-vl-topk" type="number" min="1" max="16" value="8" />
+        </div>
+        <div class="field">
+          <label>Qwen 权重
+            <span class="tip" title="本地 Qwen2-VL 重排序分与 CLIP/KB 分数融合的权重。0.35 表示保留原相似度为主。">?</span>
+          </label>
+          <input id="annot-vl-weight" type="number" min="0" max="1" step="0.05" value="0.35" />
+        </div>
+        <div class="field">
+          <label>Qwen 代表帧
+            <span class="tip" title="每个候选片段送入本地 Qwen2-VL 的代表帧数。MacBook Air 上默认 1 帧更稳, 台词会由 ASR 补充。">?</span>
+          </label>
+          <input id="annot-vl-frames" type="number" min="1" max="4" value="1" />
+        </div>
+      </div>
+    </details>
+    <button id="btn-annotate">开始标注</button>
+    <div id="annot-warn" class="kb-banner empty" style="display:none;margin-top:10px"></div>
+    <div id="annot-status" class="loading" style="margin-top:10px;display:none"></div>
+    <div id="annot-timing" class="timing-panel" style="display:none"></div>
+    <div id="annot-results" class="annot-list" style="margin-top:12px"></div>
+    <div id="annot-empty" class="empty">填好上方参数后点"开始标注"。</div>
+
+    <!-- 字节高光标注 -->
+    <section class="panel" style="margin-top:20px">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">字节高光标注</div>
+          <div class="panel-note">火山引擎 MediaKit · 漫剧模式 (StorylineCuts)。上传视频 → TOS → 字节 API 分析 → 直接展示高光片段。不走向量库语义匹配。</div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div class="file-picker" data-file-picker style="flex: 1 1 280px;">
+          <button type="button" class="file-picker-btn" data-file-trigger="bytedance-file">选择视频</button>
+          <div class="file-picker-name" data-file-name-for="bytedance-file" data-empty="未选择视频">未选择视频</div>
+          <input id="bytedance-file" class="file-input-hidden" type="file" accept="video/*" />
+        </div>
+        <button id="btn-bytedance-annotate">字节高光分析</button>
+      </div>
+      <div id="bytedance-status" class="loading" style="margin-top:10px;display:none"></div>
+      <div id="bytedance-timing" class="timing-panel" style="display:none"></div>
+      <div id="bytedance-results" class="annot-list" style="margin-top:12px"></div>
+      <div id="bytedance-empty" class="empty">选择视频后点"字节高光分析"。</div>
+    </section>
+    </div>
+    </div>
+  </div>
+</section>
+
+</div>
+
+</main>
+</div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<!-- 视频预览模态 -->
+<div id="preview-mask" class="modal-mask" role="dialog" aria-modal="true">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="title" id="preview-title">video</div>
+      <div class="clip-info" id="preview-info"></div>
+      <button class="close" id="preview-close" aria-label="关闭">×</button>
+    </div>
+    <video id="preview-video" controls preload="metadata" playsinline></video>
+    <div class="modal-foot">
+      <span id="preview-foot-left"></span>
+      <span id="preview-foot-right"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
+
+// ---------- toast ----------
+let toastTimer = null;
+function toast(msg, kind = "ok") {
+  const el = $("#toast");
+  el.textContent = msg;
+  el.className = `toast show ${kind}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 3000);
+}
+
+// ---------- file pickers ----------
+function formatFilePickerName(input) {
+  const files = [...(input.files || [])];
+  if (!files.length) {
+    const nameEl = document.querySelector(`[data-file-name-for="${input.id}"]`);
+    return nameEl?.dataset.empty || "未选择文件";
+  }
+  if (files.length === 1) return files[0].name;
+  return `${files.length} 个文件 · ${files[0].name}`;
+}
+
+function updateFilePicker(input) {
+  const nameEl = document.querySelector(`[data-file-name-for="${input.id}"]`);
+  const picker = input.closest("[data-file-picker]");
+  if (!nameEl) return;
+  nameEl.textContent = formatFilePickerName(input);
+  nameEl.title = input.files?.length ? [...input.files].map(f => f.name).join("\n") : "";
+  picker?.classList.toggle("has-file", !!input.files?.length);
+}
+
+function initFilePickers() {
+  $$("[data-file-trigger]").forEach(btn => {
+    const input = document.getElementById(btn.dataset.fileTrigger);
+    if (!input) return;
+    btn.addEventListener("click", () => input.click());
+  });
+  $$(".file-input-hidden").forEach(input => {
+    updateFilePicker(input);
+    input.addEventListener("change", () => updateFilePicker(input));
+  });
+}
+
+initFilePickers();
+
+// ---------- 通用异步任务轮询 ----------
+// usage: const result = await pollTask(task_id, { onProgress: (task) => ... })
+async function pollTask(task_id, opts = {}) {
+  const interval = opts.interval || 1000;
+  const timeout = opts.timeout || 1200 * 1000;
+  const onProgress = opts.onProgress || (() => {});
+  const shouldCancel = opts.shouldCancel || (() => false);
+  const start = Date.now();
+  while (true) {
+    if (shouldCancel()) {
+      try { await fetch(`/tasks/${task_id}/cancel`, { method: "POST" }); } catch {}
+      throw new Error("已取消");
+    }
+    if (Date.now() - start > timeout) throw new Error("轮询超时");
+    await new Promise(rs => setTimeout(rs, interval));
+    let task;
+    try {
+      const r = await fetch(`/tasks/${task_id}`);
+      if (!r.ok) continue;
+      task = await r.json();
+    } catch { continue; }
+    try { onProgress(task); } catch {}
+    if (task.status === "done") return task.result || {};
+    if (task.status === "failed") throw new Error(task.error || "task failed");
+    if (task.status === "canceled") throw new Error("已取消");
+  }
+}
+
+const ANNOT_TASK_PARAM = "annot_task";
+
+function getAnnotateTaskIdFromRoute() {
+  try {
+    return new URL(location.href).searchParams.get(ANNOT_TASK_PARAM) || "";
+  } catch {
+    return "";
+  }
+}
+
+function setAnnotateTaskIdInRoute(taskId) {
+  if (!taskId) return;
+  try {
+    const url = new URL(location.href);
+    url.searchParams.set(ANNOT_TASK_PARAM, taskId);
+    history.replaceState({ annot_task: taskId }, "", url);
+  } catch {}
+}
+
+function persistAnnotateResult(taskId, j, wall, statusText) {
+  try {
+    const payload = JSON.stringify({
+      task_id: taskId || "",
+      j,
+      wall,
+      savedAt: Date.now(),
+      status_text: statusText || "",
+    });
+    localStorage.setItem("vrag.lastAnnotateResult", payload);
+    if (taskId) localStorage.setItem(`vrag.annotateResult.${taskId}`, payload);
+  } catch {}
+}
+
+function loadStoredAnnotateResult(taskId) {
+  try {
+    const keyed = taskId ? localStorage.getItem(`vrag.annotateResult.${taskId}`) : null;
+    if (keyed) return JSON.parse(keyed);
+    const last = localStorage.getItem("vrag.lastAnnotateResult");
+    if (!last) return null;
+    const parsed = JSON.parse(last);
+    if (!taskId || parsed.task_id === taskId) return parsed;
+  } catch {}
+  return null;
+}
+
+function showAnnotateResultStep() {
+  setTimeout(() => {
+    if (typeof window.__obGotoStep === "function") {
+      window.__obGotoStep("result", "forward");
+      return;
+    }
+    const steps = ["kb", "video", "run", "result"];
+    steps.forEach((step) => {
+      const screen = document.querySelector(`#ob-stage .step-screen[data-step="${step}"]`);
+      if (!screen) return;
+      const active = step === "result";
+      screen.style.display = active ? "" : "none";
+      screen.dataset.state = active ? "active" : "idle";
+    });
+    document.querySelectorAll(".ob-step-marker").forEach((marker) => {
+      const idx = steps.indexOf(marker.dataset.step || "");
+      marker.dataset.state = idx < steps.length - 1 ? "done" : "active";
+    });
+    document.querySelectorAll(".ob-progress-line").forEach((line) => {
+      line.dataset.filled = "true";
+    });
+  }, 80);
+}
+
+function showAnnotateResult(taskId, j, wall = 0, statusPrefix = "") {
+  renderAnnotateTiming(j, wall || 0);
+  renderAnnotations(j);
+  const count = (j.annotations || []).length;
+  const rejectedCount = (j.rejected_annotations || []).length;
+  const rejectedText = rejectedCount ? `, Qwen2-VL 拒绝 ${rejectedCount} 个候选` : "";
+  const statusText = `${statusPrefix}完成。知识库内 ${j.kb_sample_count || 0} 个样例 (${(j.labels_in_kb || []).length} 类), 命中 ${count} 个高光${rejectedText}。`;
+  $("#annot-status").style.display = "";
+  $("#annot-status").textContent = statusText;
+  $("#side-kb-hits").textContent = String(count);
+  $("#metric-last-cost").textContent = wall ? `${Math.round(wall / 1000)}s` : "—";
+  const resultCount = $("#ob-result-count");
+  if (resultCount) resultCount.textContent = String(count);
+  const resultRejected = $("#ob-result-rejected");
+  if (resultRejected) {
+    resultRejected.style.display = rejectedCount ? "" : "none";
+    resultRejected.textContent = rejectedCount ? `· Qwen2-VL 拒绝 ${rejectedCount} 个候选` : "";
+  }
+  const resultTime = $("#ob-result-time");
+  if (resultTime && wall) resultTime.textContent = `${(wall / 1000).toFixed(1)} s`;
+  persistAnnotateResult(taskId, j, wall || 0, statusText);
+  showAnnotateResultStep();
+}
+
+async function restoreAnnotateTaskFromRoute() {
+  const taskId = getAnnotateTaskIdFromRoute();
+  if (!taskId) return false;
+  const st = $("#annot-status");
+  if (st) {
+    st.style.display = "";
+    st.textContent = `正在从任务 ${taskId} 恢复标注结果…`;
+  }
+  const btn = $("#btn-annotate");
+  if (btn) btn.disabled = true;
+  const wallStart = performance.now();
+  try {
+    const r = await fetch(`/tasks/${encodeURIComponent(taskId)}`);
+    let task = null;
+    if (r.ok) {
+      task = await r.json();
+    } else {
+      const stored = loadStoredAnnotateResult(taskId);
+      if (stored && stored.j) {
+        showAnnotateResult(taskId, stored.j, stored.wall || 0, `从本地缓存恢复任务 ${taskId}。`);
+        return true;
+      }
+      throw new Error(await r.text());
+    }
+    if (task.status === "done") {
+      showAnnotateResult(taskId, task.result || {}, 0, `从任务 ${taskId} 恢复。`);
+      return true;
+    }
+    if (task.status === "failed") throw new Error(task.error || "task failed");
+    if (task.status === "canceled") throw new Error("任务已取消");
+
+    const j = await pollTask(taskId, {
+      onProgress: (task) => {
+        const pct = Math.round((task.progress || 0) * 100);
+        const elapsed = Math.round((performance.now() - wallStart) / 1000);
+        if (st) st.textContent = `[恢复中:${task.status}] ${task.message || ""}  进度 ${pct}%  已等 ${elapsed}s`;
+      },
+    });
+    showAnnotateResult(taskId, j, performance.now() - wallStart, `从任务 ${taskId} 恢复。`);
+    return true;
+  } catch (e) {
+    if (st) st.textContent = `无法恢复任务 ${taskId}: ${e.message}`;
+    console.warn("restoreAnnotateTaskFromRoute", e);
+    return true;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ---------- tabs ----------
+$$("[data-tab]").forEach(t => {
+  const activateSearchTab = () => {
+    $$("[data-tab]").forEach(x => x.classList.remove("active"));
+    $$("[data-tab]").forEach(x => x.setAttribute("aria-selected", "false"));
+    $$("[data-panel]").forEach(x => x.classList.remove("active"));
+    t.classList.add("active");
+    t.setAttribute("aria-selected", "true");
+    const panel = $(`.tab-panel[data-panel="${t.dataset.tab}"]`);
+    if (panel) panel.classList.add("active");
+  };
+  t.addEventListener("click", activateSearchTab);
+  t.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      activateSearchTab();
+    }
+  });
+});
+
+// ---------- health ----------
+async function refreshHealth() {
+  try {
+    const r = await fetch("/health");
+    const j = await r.json();
+    const ok = j.status === "ok";
+    $("#status-dot").className = `dot ${ok ? "ok" : "bad"}`;
+    $("#status-text").textContent = ok ? "Qdrant connected" : (j.qdrant || "degraded");
+  } catch (e) {
+    $("#status-dot").className = "dot bad";
+    $("#status-text").textContent = "API unreachable";
+  }
+}
+
+// ---------- format ----------
+function fmtTime(s) {
+  s = Number(s) || 0;
+  const m = Math.floor(s / 60), sec = (s % 60).toFixed(1);
+  return `${String(m).padStart(2,"0")}:${String(sec).padStart(4,"0")}`;
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function fmtMs(v, digits = 0) {
+  const n = Number(v) || 0;
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 1 : 2)} s`;
+  return `${n.toFixed(digits)} ms`;
+}
+function timingPill(label, value, title = "", cls = "") {
+  const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+  return `<span class="pill ${cls}"${titleAttr}><span class="label">${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></span>`;
+}
+
+// ---------- timing panel ----------
+function renderTimings(t) {
+  const el = $("#timing");
+  if (!t || typeof t.total_ms !== "number") { el.style.display = "none"; return; }
+  const total = Math.max(t.total_ms, 0.01);
+  const embed = Math.max(t.embed_ms || 0, 0);
+  const coarse = Math.max(t.coarse_ms || 0, 0);
+  const rerank = Math.max(t.rerank_ms || 0, 0);
+  const wall = t.wall_ms ? Math.max(t.wall_ms, 0) : null;
+  const pct = (v) => Math.max((v / total) * 100, 0);
+  el.style.display = "";
+  el.innerHTML = `
+    ${timingPill("后台搜索", fmtMs(total, 1), "服务器实际处理搜索请求的耗时。", "total")}
+    ${wall != null ? timingPill("页面等待", fmtMs(wall, 1), "从点击搜索到页面拿到结果的总等待时间, 包含网络往返。") : ""}
+    ${timingPill("理解查询", fmtMs(embed, 1), "把文字或图片查询转换成可匹配的向量。")}
+    ${timingPill(`粗筛片段 ${t.coarse_count ?? 0}个`, fmtMs(coarse, 1), "先从视频库里找出一批可能相关的片段。")}
+    ${timingPill("重排结果", fmtMs(rerank, 1), "对粗筛结果再次排序, 把更相关的排到前面。")}
+    <div class="timing-bar" title="蓝=理解查询 绿=粗筛片段 橙=重排结果">
+      <span class="b-embed"  style="width:${pct(embed).toFixed(2)}%"></span>
+      <span class="b-coarse" style="width:${pct(coarse).toFixed(2)}%"></span>
+      <span class="b-rerank" style="width:${pct(rerank).toFixed(2)}%"></span>
+    </div>
+  `;
+}
+
+function renderAnnotateTiming(j, wallMs = null) {
+  const t = (j && j.timings) || {};
+  const el = $("#annot-timing");
+  if (!el || typeof t.total_ms !== "number") {
+    if (el) el.style.display = "none";
+    return;
+  }
+  const chips = [
+    timingPill("后台总耗时", fmtMs(t.total_ms), "服务器完成这次标注实际花掉的时间。", "total"),
+  ];
+  if (wallMs != null) {
+    chips.push(timingPill("页面等待", fmtMs(wallMs), "从点击运行到页面收到完成结果的总等待时间。"));
+  }
+  chips.push(timingPill("读取并切视频", fmtMs(t.decode_ms), "读取视频, 并切成可以分析的小片段。"));
+  if ((t.transcript_ms || 0) > 0) {
+    chips.push(timingPill(`台词识别 ${t.num_transcript_segments || 0}条`, fmtMs(t.transcript_ms), "用本地 ASR 识别视频中的人物对白或旁白。"));
+  }
+  chips.push(timingPill(`画面理解 ${t.num_clips || 0}段`, fmtMs(t.embed_ms), "把每个视频片段的画面转换成可比较的语义特征。"));
+  chips.push(timingPill("匹配高光样例", fmtMs(t.kb_search_ms, 1), "把视频片段和你知识库里的高光样例做相似度匹配。"));
+  chips.push(timingPill("合并相邻片段", fmtMs(t.aggregate_ms, 1), "把连续命中的片段合成一个更完整的高光段。"));
+  if (j.used_llm_segments) {
+    chips.push(timingPill(`云端智能切段 ${j.llm_segments_count || 0}段`, "qwen3.5-plus", "显式开启云端选项后, 由云端模型先判断高光时间段。"));
+  }
+  if ((j.local_vlm_segment_ms || 0) > 0) {
+    chips.push(timingPill(`本地理解切分 ${j.local_vlm_segments_count || 0}段`, fmtMs(j.local_vlm_segment_ms), "由本机 Qwen2-VL 滑窗理解整条视频, 切出候选高光时间段。"));
+  }
+  if ((t.vl_rerank_ms || 0) > 0) {
+    chips.push(timingPill(`本地重排序 ${t.num_vl_calls || 0}段`, fmtMs(t.vl_rerank_ms), "由本机 Qwen2-VL 输出是否高光、理由、标签和剪辑建议, 并重排召回候选。"));
+  }
+  if (j.used_local_vlm_fallback) {
+    chips.push(timingPill("保留本地判断", "已启用", "知识库匹配没有命中时, 保留本地 Qwen2-VL 已确认的高光段。"));
+  }
+  el.style.display = "";
+  el.innerHTML = chips.join("");
+}
+
+function annotationThumbUrl(result, annot) {
+  if (annot.thumbnail) {
+    return `/thumbnails/${encodeURIComponent(String(annot.thumbnail).split("/").pop())}`;
+  }
+  const videoId = result && result.video_id ? String(result.video_id) : "";
+  if (!videoId) return "";
+  const t = encodeURIComponent(((Number(annot.start_time) || 0)).toFixed(2));
+  if (result.temporary) {
+    return `/temp-videos/${encodeURIComponent(videoId)}/thumbnail?t=${t}`;
+  }
+  return `/videos/${encodeURIComponent(videoId)}/thumbnail?t=${t}`;
+}
+
+// ---------- video preview modal ----------
+const preview = {
+  mask: null,
+  video: null,
+  open(r) {
+    if (!this.mask) {
+      this.mask = $("#preview-mask");
+      this.video = $("#preview-video");
+      $("#preview-close").addEventListener("click", () => this.close());
+      this.mask.addEventListener("click", (e) => { if (e.target === this.mask) this.close(); });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && this.mask.classList.contains("show")) this.close();
+      });
+    }
+    const name = (r.video_path || "").split("/").pop() || r.video_id;
+    $("#preview-title").textContent = name;
+    $("#preview-info").textContent = `${fmtTime(r.start_time)} → ${fmtTime(r.end_time)}`;
+    $("#preview-foot-left").textContent = `score ${r.score.toFixed(4)}  ·  片段 ${r.clip_indices.length} 个`;
+    $("#preview-foot-right").innerHTML = `<code>${escapeHtml(r.video_id)}</code>`;
+
+    const url = r.stream_url || `/videos/${encodeURIComponent(r.video_id)}/stream`;
+    const start = Math.max(0, r.start_time || 0);
+    // 用 #t=start,end 让浏览器自动 seek; 同时 loadedmetadata 后再补一次保险
+    this.video.src = `${url}#t=${start.toFixed(2)},${(r.end_time || start + 5).toFixed(2)}`;
+    this.video.currentTime = start;
+    const onMeta = () => {
+      try { this.video.currentTime = start; } catch {}
+      this.video.removeEventListener("loadedmetadata", onMeta);
+    };
+    this.video.addEventListener("loadedmetadata", onMeta);
+    this.video.play().catch(() => {});
+    this.mask.classList.add("show");
+  },
+  close() {
+    if (!this.mask) return;
+    this.mask.classList.remove("show");
+    try { this.video.pause(); } catch {}
+    this.video.removeAttribute("src");
+    this.video.load();
+  },
+};
+
+// ---------- render results ----------
+function renderResults(query, results) {
+  const box = $("#results");
+  const empty = $("#results-empty");
+  box.innerHTML = "";
+  if (!results.length) {
+    empty.style.display = "";
+    empty.textContent = `没有匹配 "${query}" 的结果。`;
+    return;
+  }
+  empty.style.display = "none";
+  results.forEach((r, idx) => {
+    const div = document.createElement("div");
+    div.className = "result";
+    div.tabIndex = 0;
+    div.setAttribute("role", "button");
+    div.title = "点击预览片段";
+    const thumb = r.thumbnail
+      ? `<div class="thumb" style="background-image:url('/thumbnails/${encodeURIComponent(r.thumbnail.split('/').pop())}')"></div>`
+      : `<div class="thumb">暂无封面</div>`;
+    const name = (r.video_path || "").split("/").pop() || r.video_id;
+    div.innerHTML = `
+      ${thumb}
+      <div class="body">
+        <div class="name" title="${escapeHtml(r.video_path)}">${escapeHtml(name)}</div>
+        <div class="meta">
+          <span>${fmtTime(r.start_time)} → ${fmtTime(r.end_time)}</span>
+          <span class="score">score ${r.score.toFixed(4)}</span>
+        </div>
+        <div class="meta"><code>${escapeHtml(r.video_id)}</code></div>
+      </div>
+    `;
+    div.addEventListener("click", () => preview.open(r));
+    div.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); preview.open(r); }
+    });
+    box.appendChild(div);
+  });
+}
+
+// ---------- text search ----------
+$("#btn-search-text").addEventListener("click", async () => {
+  const q = $("#q-text").value.trim();
+  if (!q) { toast("请输入 query", "err"); return; }
+  const btn = $("#btn-search-text");
+  btn.disabled = true;
+  const mode = $("#q-rerank-mode").value;
+  $("#results-empty").textContent = mode === "internvl"
+    ? "Qwen2-VL 精排中… (首次会加载 Qwen2-VL-2B, 可能几十秒)"
+    : "搜索中…";
+  $("#results-empty").style.display = "";
+  $("#results").innerHTML = "";
+  $("#timing").style.display = "none";
+  const t0 = performance.now();
+  try {
+    const body = {
+      query: q,
+      top_k: parseInt($("#q-topk").value, 10) || 10,
+      rerank: mode !== "off",
+    };
+    if (mode !== "off") body.rerank_mode = mode;
+    const r = await fetch("/search/text", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const subm = await r.json();
+    const j = await pollTask(subm.task_id, {
+      onProgress: (task) => {
+        const pct = Math.round((task.progress || 0) * 100);
+        const elapsed = Math.round((Date.now() - t0) / 1000);
+        $("#results-empty").textContent = `[${task.status}] ${task.message || ""}  ${pct}%  ${elapsed}s`;
+      },
+    });
+    const wallMs = performance.now() - t0;
+    const timings = j.timings || {};
+    timings.wall_ms = wallMs;
+    renderResults(q, j.results || []);
+    renderTimings({ ...timings, wall_ms: wallMs });
+  } catch (e) {
+    toast("搜索失败: " + e.message, "err");
+    $("#results-empty").textContent = "搜索失败: " + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+$("#q-text").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("#btn-search-text").click();
+});
+
+// ---------- image search ----------
+$("#btn-search-image").addEventListener("click", async () => {
+  const f = $("#q-image").files[0];
+  if (!f) { toast("请选择图片", "err"); return; }
+  const btn = $("#btn-search-image");
+  btn.disabled = true;
+  $("#results-empty").textContent = "上传中…";
+  $("#results-empty").style.display = "";
+  $("#results").innerHTML = "";
+  $("#timing").style.display = "none";
+  const t0 = performance.now();
+  const mode = $("#q-image-rerank-mode").value;
+  try {
+    const fd = new FormData();
+    fd.append("file", f);
+    fd.append("top_k", String(parseInt($("#q-image-topk").value, 10) || 10));
+    fd.append("rerank", mode !== "off" ? "true" : "false");
+    if (mode !== "off") fd.append("rerank_mode", mode);
+    const r = await fetch("/search/image", { method: "POST", body: fd });
+    if (!r.ok) throw new Error(await r.text());
+    const subm = await r.json();
+    const j = await pollTask(subm.task_id, {
+      onProgress: (task) => {
+        const pct = Math.round((task.progress || 0) * 100);
+        const elapsed = Math.round((Date.now() - t0) / 1000);
+        $("#results-empty").textContent = `[${task.status}] ${task.message || ""}  ${pct}%  ${elapsed}s`;
+      },
+    });
+    const wallMs = performance.now() - t0;
+    renderResults(`<image:${f.name}>`, j.results || []);
+    renderTimings({ ...(j.timings || {}), wall_ms: wallMs });
+  } catch (e) {
+    toast("搜索失败: " + e.message, "err");
+    $("#results-empty").textContent = "搜索失败: " + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ---------- ingest (batch, serial) ----------
+let ingestCancelRequested = false;
+let searchIngestCancelRequested = false;
+
+function fmtBytes(n) {
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+  if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + " MB";
+  return (n / 1024 / 1024 / 1024).toFixed(2) + " GB";
+}
+
+function buildQueueRows(files, queue) {
+  queue.innerHTML = "";
+  queue.style.display = "";
+  const summary = document.createElement("div");
+  summary.className = "queue-summary";
+  queue.appendChild(summary);
+
+  const rows = files.map((f, i) => {
+    const row = document.createElement("div");
+    row.className = "queue-row pending";
+    row.dataset.idx = String(i);
+    row.innerHTML = `
+      <span class="icon">⋯</span>
+      <span class="name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+      <span class="info">${fmtBytes(f.size)}</span>
+      <span class="info status">待处理</span>
+    `;
+    queue.appendChild(row);
+    return row;
+  });
+  return rows;
+}
+
+function setRowState(row, state, statusText, iconChar) {
+  row.className = `queue-row ${state}`;
+  row.querySelector(".icon").textContent = iconChar;
+  row.querySelector(".status").textContent = statusText;
+}
+
+function updateSummary(stats, total, queue) {
+  const s = queue ? queue.querySelector(".queue-summary") : null;
+  if (!s) return;
+  s.innerHTML = `
+    <span>总计: <b>${total}</b></span>
+    <span>成功: <b style="color:var(--good)">${stats.ok}</b></span>
+    <span>跳过: <b style="color:#d4a849">${stats.skipped}</b></span>
+    <span>失败: <b style="color:var(--bad)">${stats.failed}</b></span>
+    <span>剩余: <b>${total - stats.ok - stats.skipped - stats.failed - stats.canceled}</b></span>
+  `;
+}
+
+async function ingestOne(file, row, skipExisting, shouldCancel, extras) {
+  setRowState(row, "running", "上传中…", "▶");
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("skip_existing", skipExisting ? "true" : "false");
+  // extras: { segmentsJson?: string, useLlmSegments?: boolean, useLocalVlmSegments?: boolean }
+  if (extras && extras.segmentsJson) fd.append("segments_json", extras.segmentsJson);
+  if (extras && extras.useLlmSegments) fd.append("use_llm_segments", "true");
+  if (extras && extras.useLocalVlmSegments) fd.append("use_local_vlm_segments", "true");
+  const r = await fetch("/ingest", { method: "POST", body: fd });
+  if (!r.ok) {
+    const text = await r.text();
+    throw new Error(`HTTP ${r.status}: ${text.slice(0, 120)}`);
+  }
+  const subm = await r.json();
+  const tid = subm.task_id;
+  if (!tid) throw new Error("no task_id returned");
+
+  // 轮询任务状态
+  setRowState(row, "running", `已上传, 后台执行 (task ${tid.slice(0, 8)})…`, "▶");
+  const pollStart = Date.now();
+  const TIMEOUT = 1200 * 1000;
+  while (true) {
+    if (shouldCancel()) {
+      try { await fetch(`/tasks/${tid}/cancel`, { method: "POST" }); } catch {}
+      throw new Error("用户取消");
+    }
+    if (Date.now() - pollStart > TIMEOUT) throw new Error("轮询超时 (>20min)");
+    await new Promise(rs => setTimeout(rs, 1000));
+    let task;
+    try {
+      const tr = await fetch(`/tasks/${tid}`);
+      if (!tr.ok) continue;
+      task = await tr.json();
+    } catch { continue; }
+
+    const pct = Math.round((task.progress || 0) * 100);
+    const elapsed = ((Date.now() - pollStart) / 1000).toFixed(0);
+    setRowState(row, "running", `${task.message || task.status}  ${pct}%  ${elapsed}s`, "▶");
+
+    if (task.status === "done") return task.result || {};
+    if (task.status === "failed") throw new Error(task.error || "task failed");
+    if (task.status === "canceled") throw new Error("已取消");
+  }
+}
+
+async function startIngestFromControls(opts) {
+  const files = Array.from(opts.fileInput.files);
+  if (!files.length) { toast("请选择视频", "err"); return; }
+
+  const btn = opts.button;
+  const cancelBtn = opts.cancelButton;
+  const statusEl = opts.statusEl;
+  const skipExisting = opts.skipInput.checked;
+  const useLlmSegments = !!(opts.useLlmInput && opts.useLlmInput.checked);
+  const useLocalVlmSegments = !!(opts.useLocalVlmInput && opts.useLocalVlmInput.checked);
+  const cutModeText = useLocalVlmSegments ? "（本地 Qwen2-VL 推理切分）" : (useLlmSegments ? "（qwen3.5-plus 推理切分）" : "");
+
+  opts.setCanceled(false);
+  btn.disabled = true;
+  cancelBtn.disabled = false;
+  cancelBtn.textContent = "取消剩余";
+  cancelBtn.style.display = files.length > 1 ? "" : "none";
+  statusEl.style.display = "";
+  statusEl.textContent = `批量入库 ${files.length} 个视频${cutModeText}，串行处理避免显存争抢…`;
+
+  const rows = buildQueueRows(files, opts.queueEl);
+  const stats = { ok: 0, skipped: 0, failed: 0, canceled: 0 };
+  updateSummary(stats, files.length, opts.queueEl);
+
+  const startedAt = Date.now();
+  // 并发: LLM 模式下后端 LLM 阶段并发, embedding 阶段串行(锁), 所以前端可以放心并发提交
+  // 非 LLM 模式后端依然有锁兜底, 但并发更多无收益, 限 4
+  const concurrency = useLocalVlmSegments ? 1 : (useLlmSegments ? 8 : 4);
+  let nextIdx = 0;
+  let processed = 0;
+  async function worker() {
+    while (true) {
+      if (opts.isCanceled()) return;
+      const i = nextIdx++;
+      if (i >= files.length) return;
+      const f = files[i];
+      const row = rows[i];
+      if (opts.isCanceled()) {
+        setRowState(row, "canceled", "已取消", "⊘");
+        stats.canceled++;
+        processed++;
+        updateSummary(stats, files.length, opts.queueEl);
+        continue;
+      }
+      try {
+        const j = await ingestOne(f, row, skipExisting, opts.isCanceled, { useLlmSegments, useLocalVlmSegments });
+        if (j.error) {
+          setRowState(row, "failed", `失败: ${j.error.slice(0, 80)}`, "✗");
+          stats.failed++;
+        } else if (j.skipped) {
+          setRowState(row, "skipped", `已跳过 (video_id=${j.video_id})`, "⤼");
+          stats.skipped++;
+        } else {
+          const llmTag = j.used_llm_segments ? ` · 云端 ${j.llm_segments_count} 段` : "";
+          const localTag = j.used_local_vlm_segments ? ` · 本地Qwen ${j.local_vlm_segments_count} 段` : "";
+          setRowState(row, "done", `${j.num_clips} 个片段${llmTag}${localTag}`, "✓");
+          stats.ok++;
+        }
+      } catch (e) {
+        if (e.message === "用户取消" || e.message === "已取消") {
+          setRowState(row, "canceled", "已取消", "⊘");
+          stats.canceled++;
+        } else {
+          setRowState(row, "failed", `异常: ${e.message}`, "✗");
+          stats.failed++;
+        }
+      }
+      processed++;
+      updateSummary(stats, files.length, opts.queueEl);
+      statusEl.textContent = `并发 ${concurrency}: 完成 ${processed}/${files.length}（已用时 ${((Date.now() - startedAt) / 1000).toFixed(0)}s）`;
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, files.length) }, () => worker()));
+
+  cancelBtn.style.display = "none";
+  btn.disabled = false;
+  if (opts.isCanceled()) {
+    statusEl.textContent = `已取消剩余任务。成功 ${stats.ok}，跳过 ${stats.skipped}，失败 ${stats.failed}，取消 ${stats.canceled}。`;
+    toast("已取消", "ok");
+  } else {
+    statusEl.textContent = `完成。成功 ${stats.ok}，跳过 ${stats.skipped}，失败 ${stats.failed}（用时 ${((Date.now() - startedAt) / 1000).toFixed(0)}s）。`;
+    if (stats.failed === 0) toast(`入库完成: ${stats.ok} 成功 / ${stats.skipped} 跳过`, "ok");
+    else toast(`完成但有 ${stats.failed} 个失败`, "err");
+  }
+  refreshVideos();
+}
+
+$("#btn-ingest").addEventListener("click", () => startIngestFromControls({
+  fileInput: $("#ingest-file"),
+  skipInput: $("#ingest-skip"),
+  useLlmInput: $("#ingest-llm-segments"),
+  useLocalVlmInput: $("#ingest-local-vlm-segments"),
+  button: $("#btn-ingest"),
+  cancelButton: $("#btn-ingest-cancel"),
+  statusEl: $("#ingest-status"),
+  queueEl: $("#ingest-queue"),
+  isCanceled: () => ingestCancelRequested,
+  setCanceled: (v) => { ingestCancelRequested = v; },
+}));
+
+$("#btn-search-ingest").addEventListener("click", () => startIngestFromControls({
+  fileInput: $("#search-ingest-file"),
+  skipInput: $("#search-ingest-skip"),
+  useLlmInput: $("#search-ingest-llm-segments"),
+  useLocalVlmInput: $("#search-ingest-local-vlm-segments"),
+  button: $("#btn-search-ingest"),
+  cancelButton: $("#btn-search-ingest-cancel"),
+  statusEl: $("#search-ingest-status"),
+  queueEl: $("#search-ingest-queue"),
+  isCanceled: () => searchIngestCancelRequested,
+  setCanceled: (v) => { searchIngestCancelRequested = v; },
+}));
+
+function bindExclusiveCheckbox(a, b) {
+  if (!a || !b) return;
+  a.addEventListener("change", () => { if (a.checked) b.checked = false; });
+  b.addEventListener("change", () => { if (b.checked) a.checked = false; });
+}
+bindExclusiveCheckbox($("#ingest-llm-segments"), $("#ingest-local-vlm-segments"));
+bindExclusiveCheckbox($("#search-ingest-llm-segments"), $("#search-ingest-local-vlm-segments"));
+
+$("#btn-ingest-cancel").addEventListener("click", () => {
+  ingestCancelRequested = true;
+  $("#btn-ingest-cancel").disabled = true;
+  $("#btn-ingest-cancel").textContent = "正在停…";
+});
+
+$("#btn-search-ingest-cancel").addEventListener("click", () => {
+  searchIngestCancelRequested = true;
+  $("#btn-search-ingest-cancel").disabled = true;
+  $("#btn-search-ingest-cancel").textContent = "正在停…";
+});
+
+// ---------- video list ----------
+async function refreshVideos() {
+  const box = $("#videos");
+  box.innerHTML = `<div class="loading">加载中…</div>`;
+  try {
+    const r = await fetch("/videos");
+    const j = await r.json();
+    const items = j.videos || [];
+    const countPill = $("#video-count-pill");
+    if (countPill) countPill.textContent = `${items.length} 个`;
+    if (!items.length) {
+      box.innerHTML = `<div class="empty">还没有入库的视频。上传一个开始吧。</div>`;
+      return;
+    }
+    box.innerHTML = "";
+    for (const v of items) {
+      const row = document.createElement("div");
+      row.className = "video-row";
+      row.innerHTML = `
+        <code>${escapeHtml(v.video_id)}</code>
+        <div class="path">${escapeHtml(v.video_path)}</div>
+        <button class="danger" data-id="${escapeHtml(v.video_id)}">删除</button>
+      `;
+      row.querySelector("button").addEventListener("click", async (e) => {
+        const id = e.target.dataset.id;
+        if (!confirm(`删除 ${id} 的所有向量?`)) return;
+        try {
+          const r = await fetch(`/videos/${encodeURIComponent(id)}`, { method: "DELETE" });
+          if (!r.ok) throw new Error(await r.text());
+          toast("已删除", "ok");
+          refreshVideos();
+        } catch (err) {
+          toast("删除失败: " + err.message, "err");
+        }
+      });
+      box.appendChild(row);
+    }
+  } catch (e) {
+    box.innerHTML = `<div class="empty">加载失败: ${escapeHtml(e.message)}</div>`;
+  }
+}
+$("#btn-refresh-videos").addEventListener("click", refreshVideos);
+
+// ---------- init ----------
+refreshHealth();
+refreshVideos();
+setInterval(refreshHealth, 15000);
+
+// 恢复上次标注结果 (用户切 tab/刷新后立即看到上次跑过的)
+function restoreLastAnnotateResult() {
+  try {
+    if (getAnnotateTaskIdFromRoute()) return;
+    const saved = localStorage.getItem("vrag.lastAnnotateResult");
+    if (!saved) return;
+    const { j, wall, savedAt, status_text } = JSON.parse(saved);
+    if (!j || !j.annotations) return;
+    if (typeof renderAnnotations !== "function") return;
+    renderAnnotations(j);
+    const ageMin = Math.round((Date.now() - savedAt) / 60000);
+    const st = $("#annot-status");
+    if (st) {
+      st.style.display = "";
+      st.textContent = `(上次结果, ${ageMin} 分钟前) ${status_text || ""}`;
+    }
+    renderAnnotateTiming(j, wall || 0);
+    const sk = $("#side-kb-hits");
+    if (sk) sk.textContent = String((j.annotations || []).length);
+    const resultCount = $("#ob-result-count");
+    if (resultCount) resultCount.textContent = String((j.annotations || []).length);
+    const rejectedCount = (j.rejected_annotations || []).length;
+    const resultRejected = $("#ob-result-rejected");
+    if (resultRejected) {
+      resultRejected.style.display = rejectedCount ? "" : "none";
+      resultRejected.textContent = rejectedCount ? `· Qwen2-VL 拒绝 ${rejectedCount} 个候选` : "";
+    }
+  } catch (e) { console.warn("restoreLastAnnotateResult", e); }
+}
+// 等 DOM 完整 + renderAnnotations 已定义后再恢复。URL 任务优先, localStorage 兜底。
+setTimeout(() => {
+  restoreAnnotateTaskFromRoute().then((restored) => {
+    if (!restored) restoreLastAnnotateResult();
+  });
+}, 200);
+
+// ============================================================
+// 视频高光标注 (P0)
+// ============================================================
+
+// nav 切换
+$$(".nav-tab").forEach(t => {
+  t.addEventListener("click", () => {
+    $$(".nav-tab").forEach(x => x.classList.remove("active"));
+    $$(".page").forEach(x => x.classList.remove("active"));
+    t.classList.add("active");
+    $(`#page-${t.dataset.page}`).classList.add("active");
+    if (t.dataset.page === "annotate") {
+      refreshKbVideos();  // 切到标注页时刷新视频下拉
+    }
+  });
+});
+
+// sample sub-tab
+$$('[data-sampletab]').forEach(t => {
+  t.addEventListener("click", () => {
+    $$('[data-sampletab]').forEach(x => x.classList.remove("active"));
+    $$('[data-samplepanel]').forEach(x => x.classList.remove("active"));
+    t.classList.add("active");
+    $(`[data-samplepanel="${t.dataset.sampletab}"]`).classList.add("active");
+  });
+});
+
+// workbench step switch
+function showWorkbenchStep(step) {
+  $$("[data-work-step]").forEach(el => el.classList.toggle("active", el.dataset.workStep === step));
+  $$("[data-step-panel]").forEach(el => el.classList.toggle("active", el.dataset.stepPanel === step));
+  if (step === "samples" || step === "annotate") refreshKbVideos();
+}
+$$("[data-work-step]").forEach(el => {
+  el.addEventListener("click", () => showWorkbenchStep(el.dataset.workStep));
+});
+
+// label picker
+const knownLabels = new Map();
+function setKnownLabels(labels) {
+  labels.forEach(item => {
+    const label = typeof item === "string" ? item : item && item.label;
+    const count = typeof item === "object" && item ? item.count : knownLabels.get(label) || 0;
+    if (label) knownLabels.set(String(label), Number(count) || 0);
+  });
+  renderLabelMenus();
+}
+function addKnownLabel(label, targetId = null) {
+  const v = String(label || "").trim();
+  if (!v) return;
+  setKnownLabels([{ label: v, count: knownLabels.get(v) || 0 }]);
+  if (targetId && $(`#${targetId}`)) $(`#${targetId}`).value = v;
+}
+function labelEntries(filter = "") {
+  const q = filter.trim().toLowerCase();
+  return [...knownLabels.entries()]
+    .filter(([label]) => !q || label.toLowerCase().includes(q))
+    .sort((a, b) => a[0].localeCompare(b[0], "zh-CN"));
+}
+function renderLabelMenuFor(input) {
+  const menu = $(`[data-label-menu-for="${input.id}"]`);
+  if (!menu) return;
+  const entries = labelEntries(input.value);
+  if (!entries.length) {
+    menu.innerHTML = `<div class="label-empty-option">没有匹配标签，输入后可直接新增</div>`;
+    return;
+  }
+  menu.innerHTML = entries.map(([label, count]) => `
+    <button class="label-option" type="button" data-label-value="${escapeHtml(label)}">
+      <span>${escapeHtml(label)}</span>
+      ${count ? `<span class="count">${count}</span>` : ""}
+    </button>
+  `).join("");
+  menu.querySelectorAll(".label-option").forEach(btn => {
+    btn.addEventListener("mousedown", e => e.preventDefault());
+    btn.addEventListener("click", () => {
+      input.value = btn.dataset.labelValue || "";
+      hideLabelMenus();
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  });
+}
+function renderLabelMenus() {
+  $$(".sample-label-input").forEach(input => renderLabelMenuFor(input));
+}
+function showLabelMenu(input) {
+  renderLabelMenuFor(input);
+  hideLabelMenus(input.id);
+  const menu = $(`[data-label-menu-for="${input.id}"]`);
+  if (menu) menu.classList.add("show");
+}
+function hideLabelMenus(exceptId = null) {
+  $$(".label-menu").forEach(menu => {
+    if (!exceptId || menu.dataset.labelMenuFor !== exceptId) menu.classList.remove("show");
+  });
+}
+$$(".sample-label-input").forEach(input => {
+  input.addEventListener("focus", () => showLabelMenu(input));
+  input.addEventListener("click", () => showLabelMenu(input));
+  input.addEventListener("input", () => showLabelMenu(input));
+  input.addEventListener("keydown", e => {
+    if (e.key === "Escape") hideLabelMenus();
+  });
+});
+document.addEventListener("click", e => {
+  if (!e.target.closest(".label-input-wrap") && !e.target.closest(".label-add-btn")) hideLabelMenus();
+});
+$$(".label-add-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const targetId = btn.dataset.labelTarget;
+    const current = targetId && $(`#${targetId}`) ? $(`#${targetId}`).value.trim() : "";
+    const label = prompt("新增高光标签", current || "产品特写");
+    addKnownLabel(label, targetId);
+  });
+});
+
+// ---------- 知识库下拉(模仿高光标签 picker) ----------
+let knownKbs = [];
+async function refreshKnownKbs() {
+  try {
+    const r = await fetch("/kb");
+    const j = await r.json();
+    knownKbs = (j.kbs || []).map(k => ({
+      kb_id: k.kb_id,
+      sample_count: k.sample_count || 0,
+      label_count: Object.keys(k.label_counts || {}).length,
+    }));
+  } catch { knownKbs = []; }
+  renderKbMenu();
+}
+function renderKbMenu() {
+  const input = document.getElementById("kb-id");
+  const menu = document.querySelector('[data-label-menu-for="kb-id"]');
+  if (!input || !menu) return;
+  const q = (input.value || "").trim().toLowerCase();
+  const items = knownKbs
+    .filter(k => !q || k.kb_id.toLowerCase().includes(q))
+    .sort((a, b) => a.kb_id.localeCompare(b.kb_id));
+  if (!items.length) {
+    menu.innerHTML = `<div class="label-empty-option">没有匹配的知识库,直接输入新名称后会自动创建</div>`;
+    return;
+  }
+  menu.innerHTML = items.map(k => `
+    <button class="label-option" type="button" data-kb="${escapeHtml(k.kb_id)}">
+      <span>${escapeHtml(k.kb_id)}</span>
+      <span class="count">${k.sample_count} 例 / ${k.label_count} 类</span>
+    </button>`).join("");
+  menu.querySelectorAll(".label-option").forEach(btn => {
+    btn.addEventListener("mousedown", e => e.preventDefault());
+    btn.addEventListener("click", () => {
+      input.value = btn.dataset.kb || "";
+      hideLabelMenus();
+      setKbId(input.value);
+      refreshKbSummary();
+      refreshSamples();
+      refreshSamplesHint();
+      refreshKbVideos();
+    });
+  });
+}
+function showKbMenu() {
+  renderKbMenu();
+  const menu = document.querySelector('[data-label-menu-for="kb-id"]');
+  if (menu) menu.classList.add("show");
+}
+(function wireKbPicker() {
+  const input = document.getElementById("kb-id");
+  if (!input) return;
+  input.addEventListener("focus", showKbMenu);
+  input.addEventListener("click", showKbMenu);
+  input.addEventListener("input", () => { showKbMenu(); _scheduleKbAutoReload(); });
+  input.addEventListener("keydown", e => { if (e.key === "Escape") hideLabelMenus(); });
+  const btnNew = document.getElementById("btn-kb-new");
+  if (btnNew) btnNew.addEventListener("click", () => {
+    const name = prompt("输入新知识库名称(英文/数字/连字符)", "");
+    if (!name) return;
+    input.value = name.trim();
+    setKbId(input.value);
+    refreshKbSummary();
+    refreshSamples();
+    refreshSamplesHint();
+    refreshKbVideos();
+    refreshKnownKbs();
+  });
+  refreshKnownKbs();
+})();
+
+// 当前选中 kb_id (持久化到 localStorage)
+function getKbId() {
+  return ($("#kb-id").value || "").trim();
+}
+function setKbId(v) {
+  $("#kb-id").value = v;
+  try { localStorage.setItem("vrag.kb_id", v); } catch {}
+  refreshKbBanners();
+}
+try {
+  const saved = localStorage.getItem("vrag.kb_id");
+  if (saved) $("#kb-id").value = saved;
+} catch {}
+
+// 同步刷新"添加样例"和"标注"两个区的 KB 提示横幅
+function refreshKbBanners() {
+  const id = getKbId();
+  ["sample", "annot"].forEach(area => {
+    const banner = $(`#kb-banner-${area}`);
+    const nameEl = $(`#kb-banner-${area}-name`);
+    const linkEl = $(`#kb-banner-${area}-link`);
+    if (!banner) return;
+    if (!id) {
+      banner.className = "kb-banner empty";
+      banner.querySelector("span").textContent = "还没选择知识库。";
+      nameEl.textContent = "";
+      linkEl.textContent = "→ 先到上面 ① 步输入知识库 ID 并点 加载";
+    } else {
+      banner.className = "kb-banner";
+      banner.querySelector("span").textContent = "✓ 当前知识库：";
+      nameEl.textContent = id;
+      linkEl.textContent = "切换知识库 →";
+    }
+  });
+}
+
+function refreshSamplesHint() {
+  const id = getKbId();
+  const hint = $("#samples-hint");
+  if (!hint) return;
+  hint.textContent = id ? `(知识库: ${id})` : "";
+  const sideName = $("#side-kb-name");
+  if (sideName) sideName.textContent = id || "未选择";
+}
+
+// 点 banner 上的链接 → 滚到 KB 输入框并聚焦
+function scrollToKbInput() {
+  const input = $("#kb-id");
+  input.scrollIntoView({ behavior: "smooth", block: "center" });
+  setTimeout(() => input.focus(), 350);
+}
+
+// 初始化 banner 一次
+refreshKbBanners();
+refreshSamplesHint();
+
+// 启动时:已从 localStorage 恢复了 KB id,自动加载一次,
+// 让"已有标签 / 已入库视频"两个下拉直接有数据,不必手动点"加载"
+(function autoLoadOnBoot() {
+  const id = (document.getElementById("kb-id") || {}).value || "";
+  if (!id.trim()) {
+    refreshKbVideos();
+    return;
+  }
+  refreshKbSummary();
+  refreshSamples();
+  refreshSamplesHint();
+  refreshKbVideos();
+})();
+
+// KB id 变更后自动重载(用户手动改 input、粘贴新 ID 时也生效)
+let _kbAutoTimer = null;
+function _scheduleKbAutoReload() {
+  clearTimeout(_kbAutoTimer);
+  _kbAutoTimer = setTimeout(() => {
+    if (!getKbId()) return;
+    setKbId(getKbId());
+    refreshKbSummary();
+    refreshSamples();
+    refreshSamplesHint();
+    refreshKbVideos();
+  }, 350);
+}
+
+// KB 摘要
+async function refreshKbSummary() {
+  const id = getKbId();
+  const box = $("#kb-summary");
+  if (!id) { box.style.display = "none"; return; }
+  try {
+    const r = await fetch("/kb");
+    const j = await r.json();
+    const kb = (j.kbs || []).find(k => k.kb_id === id);
+    if (!kb) {
+      box.style.display = "";
+      box.innerHTML = `<span class="empty">知识库 "${escapeHtml(id)}" 还没有样例。下面添加几个开始。</span>`;
+      $("#samples").innerHTML = "";
+      $("#side-kb-samples").textContent = "0";
+      $("#side-kb-labels").textContent = "0";
+      $("#metric-kb-samples").textContent = "0";
+      $("#metric-kb-labels").textContent = "0";
+      return;
+    }
+    const tags = Object.entries(kb.label_counts).map(
+      ([lb, n]) => `<span class="label-tag">${escapeHtml(lb)} × ${n}</span>`
+    ).join("");
+    setKnownLabels(Object.entries(kb.label_counts || {}).map(([label, count]) => ({ label, count })));
+    box.style.display = "";
+    box.innerHTML = `
+      <span class="chip">知识库 <b>${escapeHtml(kb.kb_id)}</b></span>
+      <span class="chip">样例 <b>${kb.sample_count}</b></span>
+      <span class="chip">类别 <b>${Object.keys(kb.label_counts).length}</b></span>
+      <div class="label-tags">${tags}</div>
+    `;
+    $("#side-kb-samples").textContent = String(kb.sample_count);
+    $("#side-kb-labels").textContent = String(Object.keys(kb.label_counts).length);
+    $("#metric-kb-samples").textContent = String(kb.sample_count);
+    $("#metric-kb-labels").textContent = String(Object.keys(kb.label_counts).length);
+    $("#metric-total-samples").textContent = String((j.kbs || []).reduce((sum, item) => sum + (item.sample_count || 0), 0));
+  } catch (e) {
+    box.style.display = "";
+    box.innerHTML = `<span class="empty">加载知识库失败: ${escapeHtml(e.message)}</span>`;
+  }
+}
+
+async function refreshSamples() {
+  const id = getKbId();
+  const box = $("#samples");
+  if (!id) { box.innerHTML = `<div class="empty">先在 ① 步输入知识库 ID 并点"加载"。</div>`; return; }
+  try {
+    const r = await fetch(`/kb/${encodeURIComponent(id)}/samples`);
+    const j = await r.json();
+    const items = j.samples || [];
+    setKnownLabels(items.map(s => s.label));
+    if (!items.length) {
+      box.innerHTML = `<div class="empty">该知识库还没有样例，先到 ② 步添加几个。</div>`;
+      return;
+    }
+    box.innerHTML = "";
+    for (const s of items) {
+      const row = document.createElement("div");
+      row.className = "sample-row";
+      const srcInfo = s.source_video_id
+        ? `${fmtTime(s.start_time)}→${fmtTime(s.end_time)} (video=${s.source_video_id.slice(0,8)})`
+        : "";
+      row.innerHTML = `
+        <span class="label-pill">${escapeHtml(s.label || "")}</span>
+        <div>
+          <div>${escapeHtml(s.sample_id || "")}</div>
+          <div class="note">${escapeHtml(s.note || srcInfo || "")}</div>
+        </div>
+        <span class="note">${srcInfo}</span>
+        <button class="danger" data-sid="${escapeHtml(s.sample_id)}" style="padding:4px 10px;font-size:12px">删</button>
+      `;
+      row.querySelector("button").addEventListener("click", async (e) => {
+        const sid = e.target.dataset.sid;
+        if (!confirm(`删除样例 ${sid}?`)) return;
+        try {
+          const r = await fetch(`/kb/${encodeURIComponent(id)}/samples/${encodeURIComponent(sid)}`, { method: "DELETE" });
+          if (!r.ok) throw new Error(await r.text());
+          toast("已删除", "ok");
+          refreshKbSummary();
+          refreshSamples();
+        } catch (err) { toast("删除失败: " + err.message, "err"); }
+      });
+      box.appendChild(row);
+    }
+  } catch (e) {
+    box.innerHTML = `<div class="empty">加载失败: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function refreshKbVideos() {
+  // 给"添加 clip 样例"和"标注视频"两个 select 填充已入库视频
+  try {
+    const r = await fetch("/videos");
+    const j = await r.json();
+    const items = j.videos || [];
+    const opts = items.length
+      ? items.map(v => `<option value="${escapeHtml(v.video_id)}">${escapeHtml((v.video_path || "").split("/").pop() || v.video_id)} (${v.video_id.slice(0,8)})</option>`).join("")
+      : `<option value="">(没有已入库视频, 先去入库)</option>`;
+    const sel1 = $("#sample-clip-video");
+    sel1.innerHTML = opts;
+    $("#annot-video").innerHTML = opts;
+    // 首次填好下拉, 自动触发一次加载 (如果已经有 video_id)
+    if (sel1.value && typeof loadClipGrid === "function") loadClipGrid();
+  } catch {}
+}
+
+$("#btn-kb-load").addEventListener("click", () => {
+  const id = getKbId();
+  if (!id) { toast("请输入知识库 ID", "err"); return; }
+  setKbId(id);
+  refreshKbSummary();
+  refreshSamples();
+  refreshSamplesHint();
+});
+$("#kb-id").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("#btn-kb-load").click();
+});
+$("#kb-id").addEventListener("change", () => { setKbId(getKbId()); _scheduleKbAutoReload(); });
+$("#kb-id").addEventListener("input", () => { refreshKbBanners(); _scheduleKbAutoReload(); });
+
+// banner 链接 → 滚回 KB 输入框
+$("#kb-banner-sample-link").addEventListener("click", scrollToKbInput);
+$("#kb-banner-annot-link").addEventListener("click", scrollToKbInput);
+
+// ---------- 添加样例 ----------
+$("#btn-sample-text").addEventListener("click", async () => {
+  const kb = getKbId(); if (!kb) { toast("先填知识库 ID", "err"); return; }
+  const label = $("#sample-text-label").value.trim();
+  const text = $("#sample-text-text").value.trim();
+  if (!label || !text) { toast("label 和文字描述都要填", "err"); return; }
+  try {
+    const r = await fetch("/kb/sample/text", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kb_id: kb, label, text, note: text }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    toast("已添加文字样例", "ok");
+    addKnownLabel(label);
+    $("#sample-text-text").value = "";
+    refreshKbSummary(); refreshSamples(); refreshSamplesHint();
+  } catch (e) { toast("失败: " + e.message, "err"); }
+});
+
+$("#btn-sample-clip").addEventListener("click", async () => {
+  const kb = getKbId(); if (!kb) { toast("先填知识库 ID", "err"); return; }
+  const label = $("#sample-clip-label").value.trim();
+  const video_id = $("#sample-clip-video").value;
+  const start_time = parseFloat($("#sample-clip-start").value);
+  const end_time = parseFloat($("#sample-clip-end").value);
+  if (!label || !video_id || !(end_time > start_time)) {
+    toast("label / 视频 / 起止时间都要填且终>起", "err"); return;
+  }
+  const btn = $("#btn-sample-clip"); btn.disabled = true;
+  const orig = btn.textContent;
+  try {
+    const r = await fetch("/kb/sample/clip", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kb_id: kb, label, video_id, start_time, end_time }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const subm = await r.json();
+    await pollTask(subm.task_id, {
+      onProgress: (task) => {
+        const pct = Math.round((task.progress || 0) * 100);
+        btn.textContent = `${task.status} ${pct}%`;
+      },
+    });
+    toast("已添加视频片段样例", "ok");
+    addKnownLabel(label);
+    refreshKbSummary(); refreshSamples(); refreshSamplesHint();
+  } catch (e) { toast("失败: " + e.message, "err"); }
+  finally { btn.disabled = false; btn.textContent = orig; }
+});
+
+// ---------- 已入库片段网格 (多选 + 一键导入) ----------
+const clipGridState = { clips: [], selected: new Set(), loading: false };
+
+async function loadClipGrid() {
+  const video_id = $("#sample-clip-video").value;
+  const grid = $("#clip-grid"); const empty = $("#clip-grid-empty");
+  grid.innerHTML = ""; clipGridState.selected.clear(); updateImportBtn();
+  if (!video_id) { empty.style.display = ""; empty.textContent = "下拉里没视频, 先去入库."; return; }
+  empty.style.display = ""; empty.textContent = "加载中…";
+  clipGridState.loading = true;
+  try {
+    const r = await fetch(`/videos/${encodeURIComponent(video_id)}/clips`);
+    if (!r.ok) throw new Error(await r.text());
+    const j = await r.json();
+    clipGridState.clips = j.clips || [];
+    if (!clipGridState.clips.length) {
+      empty.textContent = "该视频还没有 clip (Qdrant 主索引里没记录).";
+      return;
+    }
+    empty.style.display = "none";
+    clipGridState.clips.forEach((c, i) => {
+      const card = document.createElement("div");
+      card.className = "clip-card"; card.dataset.idx = String(i);
+      const thumbStyle = c.thumbnail_url
+        ? `background-image:url('${c.thumbnail_url}')` : "";
+      card.innerHTML = `
+        <div class="thumb" style="${thumbStyle}">${c.thumbnail_url ? "" : "暂无封面"}</div>
+        <div class="meta">
+          <span class="idx">#${c.clip_index}</span>
+          <span>${(+c.start_time).toFixed(1)}-${(+c.end_time).toFixed(1)}s</span>
+        </div>
+      `;
+      card.addEventListener("click", () => {
+        if (clipGridState.selected.has(i)) { clipGridState.selected.delete(i); card.classList.remove("selected"); }
+        else { clipGridState.selected.add(i); card.classList.add("selected"); }
+        updateImportBtn();
+      });
+      grid.appendChild(card);
+    });
+  } catch (e) {
+    empty.textContent = "加载失败: " + e.message;
+  } finally {
+    clipGridState.loading = false;
+  }
+}
+
+// 选视频后自动加载片段
+$("#sample-clip-video").addEventListener("change", () => loadClipGrid());
+
+function updateImportBtn() {
+  const n = clipGridState.selected.size;
+  const btn = $("#btn-sample-clip-import");
+  btn.textContent = `导入选中 (${n})`;
+  btn.disabled = n === 0;
+}
+
+$("#btn-sample-clip-import").addEventListener("click", async () => {
+  const kb = getKbId(); if (!kb) { toast("先填知识库 ID", "err"); return; }
+  const label = $("#sample-clip-label").value.trim();
+  const video_id = $("#sample-clip-video").value;
+  if (!label) { toast("先填高光类型 / 标签", "err"); return; }
+  if (!video_id) { toast("先选视频", "err"); return; }
+  const idxs = [...clipGridState.selected];
+  if (!idxs.length) return;
+
+  const btn = $("#btn-sample-clip-import"); btn.disabled = true;
+  let ok = 0, fail = 0;
+  for (let n = 0; n < idxs.length; n++) {
+    const c = clipGridState.clips[idxs[n]];
+    btn.textContent = `导入中 ${n + 1}/${idxs.length}…`;
+    try {
+      const r = await fetch("/kb/sample/clip", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kb_id: kb, label, video_id,
+          start_time: +c.start_time, end_time: +c.end_time,
+          note: `from clip #${c.clip_index}`,
+        }),
+      });
+      if (!r.ok) { fail++; continue; }
+      const subm = await r.json();
+      await pollTask(subm.task_id, {});
+      ok++;
+    } catch { fail++; }
+  }
+  btn.disabled = false; updateImportBtn();
+  toast(`完成: 成功 ${ok}, 失败 ${fail}`, fail ? "err" : "ok");
+  addKnownLabel(label);
+  // 清空选中 + 视觉重置
+  clipGridState.selected.clear();
+  $$("#clip-grid .clip-card").forEach(el => el.classList.remove("selected"));
+  refreshKbSummary(); refreshSamples(); refreshSamplesHint();
+});
+
+$("#btn-sample-image").addEventListener("click", async () => {
+  const kb = getKbId(); if (!kb) { toast("先填知识库 ID", "err"); return; }
+  const label = $("#sample-image-label").value.trim();
+  const f = $("#sample-image-file").files[0];
+  if (!label || !f) { toast("label 和图片都要给", "err"); return; }
+  const btn = $("#btn-sample-image"); btn.disabled = true;
+  try {
+    const fd = new FormData();
+    fd.append("kb_id", kb); fd.append("label", label); fd.append("file", f);
+    const r = await fetch("/kb/sample/image", { method: "POST", body: fd });
+    if (!r.ok) throw new Error(await r.text());
+    toast("已添加图片样例", "ok");
+    addKnownLabel(label);
+    refreshKbSummary(); refreshSamples(); refreshSamplesHint();
+  } catch (e) { toast("失败: " + e.message, "err"); }
+  finally { btn.disabled = false; }
+});
+
+$("#btn-samples-refresh").addEventListener("click", () => {
+  refreshKbSummary(); refreshSamples(); refreshSamplesHint();
+});
+
+// ---- 高光归纳: 触发 auto_kb 任务 + 轮询 + 完成后刷新 ----
+$("#btn-auto-kb-run").addEventListener("click", async () => {
+  const btn = $("#btn-auto-kb-run");
+  const st = $("#auto-kb-status");
+  if (!confirm("将对 SQLite 中所有 LLM 高光段重新聚类 + 命名, 并清掉旧的 auto_llm 知识库后全量重建. 继续?")) return;
+  btn.disabled = true;
+  st.style.display = "";
+  st.textContent = "查询待归纳高光段…";
+  try {
+    const s = await fetch("/auto-kb/stats").then(r => r.json());
+    if ((s.total || 0) === 0) {
+      st.textContent = "SQLite 还没有任何 LLM 高光段。先用 qwen3.5-plus 推理切分入库一些视频再归纳。";
+      btn.disabled = false;
+      return;
+    }
+    st.textContent = `提交全量归纳任务 (总 ${s.total} 段)…`;
+    const subm = await fetch("/auto-kb/run", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text_weight: 0.5, min_cluster_size: 2,
+        kb_id: "auto_llm", name_with_llm: true,
+        force_full: true,
+      }),
+    }).then(r => r.json());
+    const tid = subm.task_id;
+    const r = await pollTask(tid, {
+      onProgress: (task) => {
+        const pct = Math.round((task.progress || 0) * 100);
+        st.textContent = `[${task.status}] ${task.message || ""}  ${pct}%`;
+      },
+    });
+    const labels = r.label_count || {};
+    const tags = Object.entries(labels).map(([k, v]) => `${k}×${v}`).join(", ") || "(空)";
+    st.textContent = `✓ 全量归纳完成: 入知识库 ${r.inserted} 段, ${r.cluster_count} 簇 → ${tags}`;
+    toast("自动归纳完成", "ok");
+    setKbId("auto_llm");
+    refreshKbSummary(); refreshSamples(); refreshSamplesHint();
+  } catch (e) {
+    st.textContent = "失败: " + e.message;
+    toast("归纳失败: " + e.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ---------- 跑标注 (异步 + 轮询) ----------
+let annotateAbort = false;
+
+$("#btn-annotate").addEventListener("click", async () => {
+  const kb = getKbId(); if (!kb) { toast("先填知识库 ID", "err"); return; }
+  const video_id = $("#annot-video").value;
+  const uploadFile = $("#annot-upload-file") ? $("#annot-upload-file").files[0] : null;
+  const threshold = parseFloat($("#annot-threshold").value) || 0.05;
+  const z_threshold = parseFloat($("#annot-zth").value) || 0.75;
+  const top_k_per_clip = parseInt($("#annot-topk").value, 10) || 5;
+  const normalize = $("#annot-normalize").checked;
+  const vl_rerank = $("#annot-vl-rerank") ? $("#annot-vl-rerank").checked : false;
+  const use_cloud_llm_segments = $("#annot-cloud-llm") ? $("#annot-cloud-llm").checked : false;
+  const use_local_vlm_segments = $("#annot-local-vlm-segments") ? $("#annot-local-vlm-segments").checked : false;
+  const vl_top_k = parseInt($("#annot-vl-topk")?.value || "8", 10) || 8;
+  const vl_weight = parseFloat($("#annot-vl-weight")?.value || "0.35");
+  const vl_max_frames = parseInt($("#annot-vl-frames")?.value || "1", 10) || 1;
+  if (!uploadFile && !video_id) { toast("请选择本地视频或已入库视频", "err"); return; }
+
+  // 单样例 KB 预警
+  const warnEl = $("#annot-warn");
+  const summaryR = await fetch("/kb").then(r => r.json()).catch(() => ({}));
+  const kbInfo = (summaryR.kbs || []).find(k => k.kb_id === kb);
+  if (normalize && kbInfo) {
+    const minSamplesPerLabel = Math.min(...Object.values(kbInfo.label_counts || { x: 99 }));
+    if (minSamplesPerLabel < 3) {
+      warnEl.style.display = "";
+      warnEl.className = "kb-banner empty";
+      warnEl.innerHTML = `当前知识库部分标签只有 ${minSamplesPerLabel} 个样例。z-score 归一需要至少 3 个才稳定。建议每个标签至少加 5 个样例，效果会显著提升。`;
+    } else {
+      warnEl.style.display = "none";
+    }
+  } else {
+    warnEl.style.display = "none";
+  }
+
+  const btn = $("#btn-annotate"); btn.disabled = true;
+  $("#annot-status").style.display = "";
+  $("#annot-status").textContent = "提交标注任务…";
+  $("#annot-empty").style.display = "none";
+  $("#annot-results").innerHTML = "";
+  $("#annot-timing").style.display = "none";
+  annotateAbort = false;
+
+  const wallStart = performance.now();
+  let task_id = null;
+  try {
+    let r;
+    if (uploadFile) {
+      const fd = new FormData();
+      fd.append("file", uploadFile);
+      fd.append("kb_id", kb);
+      fd.append("threshold", String(threshold));
+      fd.append("top_k_per_clip", String(top_k_per_clip));
+      fd.append("normalize", normalize ? "true" : "false");
+      fd.append("z_threshold", String(z_threshold));
+      fd.append("vl_rerank", vl_rerank ? "true" : "false");
+      fd.append("vl_top_k", String(vl_top_k));
+      fd.append("vl_weight", String(Number.isFinite(vl_weight) ? vl_weight : 0.35));
+      fd.append("vl_max_frames", String(vl_max_frames));
+      fd.append("use_llm_segments", use_cloud_llm_segments ? "true" : "false");
+      fd.append("use_local_vlm_segments", use_local_vlm_segments ? "true" : "false");
+      r = await fetch("/annotate/upload", { method: "POST", body: fd });
+    } else {
+      r = await fetch("/annotate", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kb_id: kb,
+          video_id,
+          threshold,
+          top_k_per_clip,
+          normalize,
+          z_threshold,
+          vl_rerank,
+          use_llm_segments: use_cloud_llm_segments,
+          use_local_vlm_segments,
+          vl_top_k,
+          vl_weight: Number.isFinite(vl_weight) ? vl_weight : 0.35,
+          vl_max_frames,
+        }),
+      });
+    }
+    if (!r.ok) throw new Error(await r.text());
+    const subm = await r.json();
+    task_id = subm.task_id;
+    setAnnotateTaskIdInRoute(task_id);
+    $("#annot-status").textContent = uploadFile
+      ? `临时视频已上传 (${subm.video_name || uploadFile.name}), ${use_cloud_llm_segments ? "使用云端 qwen3.5-plus 切分" : (use_local_vlm_segments ? "使用本地 Qwen2-VL 理解切分" : (vl_rerank ? "使用本地 Qwen2-VL 重排序" : "使用默认 hybrid 切分"))}…`
+      : `任务已提交 (${task_id}), 等待执行…`;
+  } catch (e) {
+    toast("提交失败: " + e.message, "err");
+    $("#annot-status").textContent = "提交失败: " + e.message;
+    btn.disabled = false;
+    return;
+  }
+
+  // ---- 轮询 ----
+  const POLL_INTERVAL = 1000; // 1s 轮询
+  const POLL_TIMEOUT = 1200 * 1000; // 20 分钟上限
+  const pollStart = Date.now();
+  while (true) {
+    if (annotateAbort) {
+      try { await fetch(`/tasks/${task_id}/cancel`, { method: "POST" }); } catch {}
+      $("#annot-status").textContent = "已取消";
+      btn.disabled = false;
+      return;
+    }
+    if (Date.now() - pollStart > POLL_TIMEOUT) {
+      $("#annot-status").textContent = "轮询超时 (>20 分钟), 任务可能仍在跑, 刷新页面再看.";
+      btn.disabled = false;
+      return;
+    }
+    await new Promise(rs => setTimeout(rs, POLL_INTERVAL));
+    let task;
+    try {
+      const r = await fetch(`/tasks/${task_id}`);
+      if (!r.ok) throw new Error(await r.text());
+      task = await r.json();
+    } catch (e) {
+      $("#annot-status").textContent = `轮询失败: ${e.message}, 重试中…`;
+      continue;
+    }
+
+    const elapsed = ((Date.now() - pollStart) / 1000).toFixed(0);
+    const pct = Math.round((task.progress || 0) * 100);
+    $("#annot-status").textContent =
+      `[${task.status}] ${task.message || ""}  进度 ${pct}%  已用 ${elapsed}s`;
+
+    if (task.status === "done") {
+      const wall = performance.now() - wallStart;
+      const j = task.result || {};
+      showAnnotateResult(task_id, j, wall);
+      if (!(j.annotations || []).length) {
+        const rejectedCount = (j.rejected_annotations || []).length;
+        toast(
+          rejectedCount
+            ? `Qwen2-VL 没有确认高光, 已展示 ${rejectedCount} 个被拒候选供复核`
+            : "没有标注命中, 试试降低 σ 或关闭归一化",
+          rejectedCount ? "warn" : "err"
+        );
+      }
+      btn.disabled = false;
+      return;
+    }
+    if (task.status === "failed") {
+      toast("标注失败: " + (task.error || "unknown"), "err");
+      $("#annot-status").textContent = "失败: " + (task.error || "");
+      btn.disabled = false;
+      return;
+    }
+    if (task.status === "canceled") {
+      $("#annot-status").textContent = "已取消";
+      btn.disabled = false;
+      return;
+    }
+    // pending / running 继续轮询
+  }
+});
+
+function renderAnnotations(j) {
+  const box = $("#annot-results");
+  box.innerHTML = "";
+  const annots = j.annotations || [];
+  const rejectedAnnots = j.rejected_annotations || [];
+  if (!annots.length && !rejectedAnnots.length) {
+    $("#annot-empty").style.display = "";
+    $("#annot-empty").textContent = "没有高光被检出 (threshold 太高?)";
+    return;
+  }
+  if (!annots.length && rejectedAnnots.length) {
+    $("#annot-empty").style.display = "";
+    $("#annot-empty").textContent = "Qwen2-VL 没有确认高光。下面仅展示被拒候选, 可人工复核后接受。";
+  } else {
+    $("#annot-empty").style.display = "none";
+  }
+
+  const appendAnnotationRow = (a, rejected = false) => {
+    const row = document.createElement("div");
+    row.className = rejected ? "annot-row rejected" : "annot-row";
+    const thumbUrl = annotationThumbUrl(j, a);
+    const thumb = thumbUrl
+      ? `<div class="thumb" style="background-image:url(${escapeHtml(thumbUrl)})"></div>`
+      : `<div class="thumb">等待封面</div>`;
+    const evidenceList = (a.evidence_samples || []).slice(0, 3)
+      .map(e => `${escapeHtml(e.label)}: ${e.score.toFixed(3)}${e.note ? ` (${escapeHtml(e.note.slice(0, 30))})` : ""}`)
+      .join("  •  ");
+    const understandingHtml = renderUnderstanding(a.understanding);
+    const dialogueHtml = a.dialogue
+      ? `<div class="dialogue" title="${escapeHtml(a.dialogue)}"><b>台词</b> ${escapeHtml(a.dialogue.slice(0, 180))}</div>`
+      : "";
+    const mainScore = Number(a.score);
+    const rankScore = Number(a.vl_rank_score);
+    const baseScore = Number(a.base_score);
+    const vlScore = Number(a.vl_score);
+    const hasRankScore = Number.isFinite(rankScore);
+    const scoreText = hasRankScore
+      ? `重排 ${rankScore.toFixed(4)}`
+      : `score ${Number.isFinite(mainScore) ? mainScore.toFixed(4) : "—"}`;
+    const scoreTitleParts = [];
+    if (hasRankScore) scoreTitleParts.push(`重排序分 ${rankScore.toFixed(4)}`);
+    if (Number.isFinite(baseScore)) scoreTitleParts.push(`召回分 ${baseScore.toFixed(4)}`);
+    if (Number.isFinite(vlScore)) scoreTitleParts.push(`Qwen 分 ${(vlScore * 100).toFixed(0)}`);
+    if (a.vl_rank_reason) scoreTitleParts.push(String(a.vl_rank_reason));
+    const scoreTitle = scoreTitleParts.join(" · ");
+    row.innerHTML = `
+      ${thumb}
+      <div class="info">
+        <div class="head">
+          <span class="label-tag">${escapeHtml(a.label)}</span>
+          <span>${fmtTime(a.start_time)} → ${fmtTime(a.end_time)}</span>
+          <span class="score" title="${escapeHtml(scoreTitle)}">${escapeHtml(scoreText)}</span>
+          <span class="meta">${a.duration.toFixed(1)}s · ${(a.clip_indices||[]).length} 个 clip</span>
+          ${rejected ? `<span class="meta">被 Qwen2-VL 拒绝</span>` : ""}
+        </div>
+        <div class="evidence" title="${escapeHtml(evidenceList)}">触发样例: ${evidenceList || "—"}</div>
+        ${dialogueHtml}
+        ${understandingHtml}
+      </div>
+      <div class="actions">
+        <button class="play-btn">▶ 播放</button>
+        <div class="feedback-actions">
+          <button type="button" data-feedback="true" data-accepted="true" title="接受为高光">接受</button>
+          <button type="button" data-feedback="false" data-accepted="false" title="拒绝这个候选">拒绝</button>
+        </div>
+      </div>
+    `;
+    const playFn = () => preview.open({
+      video_id: j.video_id,
+      video_path: j.video_name || "",
+      start_time: a.start_time,
+      end_time: a.end_time,
+      score: a.score,
+      thumbnail: a.thumbnail,
+      clip_indices: a.clip_indices,
+      stream_url: j.stream_url,
+    });
+    row.querySelector(".play-btn").addEventListener("click", (e) => { e.stopPropagation(); playFn(); });
+    row.querySelectorAll("[data-feedback]").forEach(btn => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        await sendHighlightFeedback(j, a, btn.dataset.feedback === "true", btn);
+      });
+    });
+    row.addEventListener("click", playFn);
+    box.appendChild(row);
+  };
+
+  annots.forEach(a => appendAnnotationRow(a, false));
+  if (rejectedAnnots.length) {
+    const head = document.createElement("div");
+    head.className = "annot-rejected-head";
+    head.textContent = `被 Qwen2-VL 拒绝的候选 ${rejectedAnnots.length} 个`;
+    box.appendChild(head);
+    rejectedAnnots.forEach(a => appendAnnotationRow(a, true));
+  }
+}
+
+async function sendHighlightFeedback(result, annot, accepted, btn) {
+  const u = annot.understanding || {};
+  const tags = Array.isArray(u.tags) ? u.tags : [];
+  const payload = {
+    video_id: result.video_id || "",
+    video_name: result.video_name || "",
+    kb_id: result.kb_id || getKbId(),
+    source: "annotate_ui",
+    original_label: annot.label || "",
+    final_label: annot.label || "",
+    start_time: annot.start_time,
+    end_time: annot.end_time,
+    model_score: annot.score,
+    accepted,
+    reason: u.reason || "",
+    tags,
+    understanding: u,
+  };
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = accepted ? "已收" : "已拒";
+  try {
+    const r = await fetch("/feedback/highlight", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    toast(accepted ? "已记录接受反馈" : "已记录拒绝反馈", "ok");
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = old;
+    toast("反馈保存失败: " + e.message, "err");
+  }
+}
+
+function renderUnderstanding(u) {
+  if (!u) return "";
+  if (u.error) {
+    return `<div class="understanding"><div class="u-error">Qwen2-VL: ${escapeHtml(u.error)}</div></div>`;
+  }
+  const tags = Array.isArray(u.tags) ? u.tags.filter(Boolean) : [];
+  const tagHtml = tags.length
+    ? `<div class="u-tags">${tags.map(t => `<span class="u-tag">${escapeHtml(String(t))}</span>`).join("")}</div>`
+    : "";
+  const score = typeof u.score === "number" ? ` · ${Math.round(u.score * 100)}分` : "";
+  const verdict = u.is_highlight === true ? "适合高光" : (u.is_highlight === false ? "不适合高光" : "判断不确定");
+  const reason = u.reason ? `<div class="u-line"><b>理由</b> ${escapeHtml(u.reason)}</div>` : "";
+  const cut = u.cut_advice ? `<div class="u-line"><b>剪辑建议</b> ${escapeHtml(u.cut_advice)}</div>` : "";
+  return `
+    <div class="understanding">
+      <div class="u-line"><b>Qwen2-VL</b> ${escapeHtml(verdict)}${score}</div>
+      ${tagHtml}
+      ${reason}
+      ${cut}
+    </div>
+  `;
+}
+
+$("#annot-upload-file").addEventListener("change", () => {
+  const f = $("#annot-upload-file").files[0];
+  const note = $("#annot-target-note");
+  if (!note) return;
+  note.textContent = f
+    ? `将临时标注：${f.name}。不会写入已入库视频列表。`
+    : "选择本地文件后会直接临时切分、嵌入并标注，不入库。";
+});
+
+// ---------- 字节高光标注 ----------
+$("#btn-bytedance-annotate").addEventListener("click", async () => {
+  const f = $("#bytedance-file").files[0];
+  if (!f) { toast("请选择视频", "err"); return; }
+  const btn = $("#btn-bytedance-annotate");
+  const st = $("#bytedance-status");
+  const timing = $("#bytedance-timing");
+  const results = $("#bytedance-results");
+  const empty = $("#bytedance-empty");
+  btn.disabled = true;
+  st.style.display = ""; st.textContent = "上传中…";
+  timing.style.display = "none";
+  results.innerHTML = ""; empty.style.display = "none";
+  const t0 = performance.now();
+  try {
+    const fd = new FormData();
+    fd.append("file", f);
+    const r = await fetch("/annotate/upload-bytedance", { method: "POST", body: fd });
+    if (!r.ok) throw new Error(await r.text());
+    const subm = await r.json();
+    st.textContent = `任务已提交 (${subm.task_id})，字节分析中…`;
+    const j = await pollTask(subm.task_id, {
+      timeout: 1200 * 1000,
+      onProgress: (task) => {
+        const pct = Math.round((task.progress || 0) * 100);
+        const elapsed = Math.round((Date.now() - t0) / 1000);
+        st.textContent = `[${task.status}] ${task.message || ""}  ${pct}%  ${elapsed}s`;
+      },
+    });
+    const wall = performance.now() - t0;
+    const t = j.timings || {};
+    timing.style.display = "";
+    timing.innerHTML = `
+      <span class="pill total"><span class="label">页面等待</span><b>${(wall/1000).toFixed(1)}s</b></span>
+      <span class="pill"><span class="label">上传视频</span><b>${((t.submit_ms||0)/1000).toFixed(1)}s</b></span>
+      <span class="pill"><span class="label">云端分析</span><b>${((t.poll_ms||0)/1000).toFixed(1)}s</b></span>
+      <span class="pill"><span class="label">高光段</span><b>${(j.segments||[]).length} 个</b></span>
+    `;
+    const segs = j.segments || [];
+    if (!segs.length) {
+      empty.style.display = ""; empty.textContent = "字节 API 未返回高光片段。";
+      st.textContent = "完成，但无高光命中。";
+    } else {
+      st.textContent = `完成。${segs.length} 个高光片段 (视频时长 ${(j.duration||0).toFixed(1)}s)`;
+      // 渲染 segments
+      segs.forEach(seg => {
+        const row = document.createElement("div");
+        row.className = "annot-row";
+        row.innerHTML = `
+          <div class="thumb" style="background:#f0f1f3;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted)">
+            ${fmtTime(seg.start_time)}-${fmtTime(seg.end_time)}
+          </div>
+          <div class="info">
+            <div class="head">
+              <span class="label-tag">score ${(seg.score||0).toFixed(2)}</span>
+              <span>${fmtTime(seg.start_time)} → ${fmtTime(seg.end_time)}</span>
+              <span class="meta">${seg.duration.toFixed(1)}s</span>
+            </div>
+            <div class="evidence">${escapeHtml(seg.description || "")}</div>
+            ${seg.ocr ? `<div class="meta" style="margin-top:2px">OCR: ${escapeHtml(seg.ocr.slice(0,80))}</div>` : ""}
+          </div>
+          <button class="play-btn">▶</button>
+        `;
+        row.querySelector(".play-btn").addEventListener("click", (e) => {
+          e.stopPropagation();
+          preview.open({
+            video_id: j.video_id, video_path: "",
+            start_time: seg.start_time, end_time: seg.end_time,
+            score: seg.score, thumbnail: "", clip_indices: [],
+          });
+        });
+        row.addEventListener("click", () => preview.open({
+          video_id: j.video_id, video_path: "",
+          start_time: seg.start_time, end_time: seg.end_time,
+          score: seg.score, thumbnail: "", clip_indices: [],
+        }));
+        results.appendChild(row);
+      });
+    }
+    toast("字节高光分析完成", "ok");
+  } catch (e) {
+    st.textContent = "失败: " + e.message;
+    toast("字节高光分析失败: " + e.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+/* ============================================================
+   ONBOARDING · 状态机 + 自动推进 + slot 物理迁移
+   ============================================================ */
+(function () {
+  const STEPS = ["kb", "video", "run", "result"];
+  const SEG_FOR = { kb: 1, video: 2, run: 3 };
+  let current = "kb";
+  let isAnimating = false;
+
+  // === DOM 缓存 ===
+  const stage      = document.getElementById("ob-stage");
+  const screens    = Object.fromEntries(STEPS.map(s => [s, stage.querySelector(`.step-screen[data-step="${s}"]`)]));
+  const markers    = Object.fromEntries(STEPS.map(s => [s, document.querySelector(`.ob-step-marker[data-step="${s}"]`)]));
+  const lines      = [1, 2, 3].map(n => document.querySelector(`.ob-progress-line[data-segment="${n}"]`));
+  const btnBack    = document.getElementById("ob-back");
+  const btnNext    = document.getElementById("ob-next");
+  const btnSkip    = document.getElementById("ob-skip");
+
+  // === slot 迁移:把原 page-annotate 的关键控件 move 进 onboarding ===
+  function moveTo(slotId, sourceEl) {
+    const slot = document.getElementById(slotId);
+    if (slot && sourceEl) slot.appendChild(sourceEl);
+  }
+
+  // 1) KB 选择器(整体 .label-picker 包装一起搬,保证下拉 menu + 加号按钮都跟着)
+  (() => {
+    const slot = document.getElementById("ob-kb-slot");
+    if (!slot) return;
+    const kbInput  = document.getElementById("kb-id");
+    const summary  = document.getElementById("kb-summary");
+    if (!kbInput) return;
+    // 找到 .label-picker 容器,整体搬运
+    const picker = kbInput.closest(".label-picker") || kbInput.parentElement;
+    if (picker) {
+      picker.classList.add("ob-kb-card-row");
+      slot.appendChild(picker);
+    }
+    if (summary) {
+      summary.style.marginTop = "12px";
+      slot.appendChild(summary);
+    }
+  })();
+
+  // 2) 样例添加(整个"添加高光样例"区域)
+  (() => {
+    const slot = document.getElementById("ob-samples-slot");
+    if (!slot) return;
+    // 找 #kb-banner-sample 的父级,把它和后续直到 sample-list 的兄弟都搬过来
+    const banner = document.getElementById("kb-banner-sample");
+    if (!banner) return;
+    const wrapper = banner.parentElement;
+    if (!wrapper) return;
+    // wrapper 是 step-panel[data-step-panel="samples"] 内层 div,把它整个 move
+    slot.appendChild(wrapper);
+  })();
+
+  // 3) 目标视频上传 input
+  (() => {
+    const slot = document.getElementById("ob-annot-upload-slot");
+    const fileInput = document.getElementById("annot-upload-file");
+    if (!slot || !fileInput) return;
+    slot.appendChild(fileInput);
+  })();
+
+  // 4) 已入库视频 select
+  (() => {
+    const slot = document.getElementById("ob-annot-video-slot");
+    const sel = document.getElementById("annot-video");
+    const note = document.getElementById("annot-target-note");
+    if (!slot || !sel) return;
+    slot.appendChild(sel);
+    if (note) slot.appendChild(note);
+  })();
+
+  // 5) 高级参数(σ / TopK / z-score + Qwen controls)
+  (() => {
+    const slot = document.getElementById("ob-advanced-slot");
+    const adv = document.querySelector("details.run-advanced");
+    if (!slot || !adv) return;
+    // 把 details 内部的 grid 节点 move 过来(只要 grid)
+    const grid = adv.querySelector(".run-advanced-grid");
+    if (grid) slot.appendChild(grid);
+  })();
+
+  // 6) 字节高光 panel
+  (() => {
+    const slot = document.getElementById("ob-bytedance-slot");
+    const sect = document.querySelector('section.panel input#bytedance-file');
+    if (!slot || !sect) return;
+    const wrapper = sect.closest("section.panel");
+    if (wrapper) slot.appendChild(wrapper);
+  })();
+
+  // 7) 视频入库 drawer(整个 step-panel[data-step-panel="ingest"] 内容)
+  (() => {
+    const slot = document.getElementById("ob-ingest-slot");
+    const ingestPanel = document.querySelector('[data-step-panel="ingest"]');
+    if (!slot || !ingestPanel) return;
+    // 把所有子节点搬过来(避免 wrapper 自己带 step-panel 隐藏样式)
+    while (ingestPanel.firstChild) slot.appendChild(ingestPanel.firstChild);
+  })();
+
+  // 8) 结果展示(annot-results / annot-empty / annot-timing)
+  (() => {
+    const slot = document.getElementById("ob-result-slot");
+    const results = document.getElementById("annot-results");
+    const empty = document.getElementById("annot-empty");
+    const timing = document.getElementById("annot-timing");
+    if (!slot) return;
+    if (timing) slot.appendChild(timing);
+    if (empty) slot.appendChild(empty);
+    if (results) slot.appendChild(results);
+  })();
+
+  // === 状态推进 ===
+  function setMarker(step, state) {
+    if (markers[step]) markers[step].dataset.state = state;
+  }
+  function setLine(seg, filled) {
+    const el = lines[seg - 1];
+    if (el) el.dataset.filled = String(!!filled);
+  }
+  function refreshProgress(activeStep) {
+    const idx = STEPS.indexOf(activeStep);
+    STEPS.forEach((s, i) => {
+      if (i < idx) setMarker(s, "done");
+      else if (i === idx) setMarker(s, "active");
+      else setMarker(s, "idle");
+    });
+    [1, 2, 3].forEach(seg => setLine(seg, seg <= idx));
+  }
+
+  function isStepReady(step) {
+    if (step === "kb") {
+      const kbId = (document.getElementById("kb-id") || {}).value || "";
+      return kbId.trim().length > 0;
+    }
+    if (step === "video") {
+      const fileInput = document.getElementById("annot-upload-file");
+      const sel = document.getElementById("annot-video");
+      const fileChosen = fileInput && fileInput.files && fileInput.files.length > 0;
+      const selChosen = sel && sel.value;
+      return fileChosen || selChosen;
+    }
+    if (step === "run")    return true;
+    if (step === "result") return true;
+    return false;
+  }
+
+  function updateNavButtons() {
+    const idx = STEPS.indexOf(current);
+    btnBack.disabled = idx === 0;
+    btnSkip.style.visibility = (current === "kb" || current === "video") ? "visible" : "hidden";
+    if (current === "result") {
+      btnNext.textContent = "重新标注 ↻";
+      btnNext.disabled = false;
+    } else if (current === "run") {
+      btnNext.style.display = "none";
+    } else {
+      btnNext.textContent = "继续 →";
+      btnNext.style.display = "";
+      btnNext.disabled = !isStepReady(current);
+    }
+  }
+
+  function gotoStep(step, dir = "forward") {
+    if (isAnimating || step === current || !STEPS.includes(step)) return;
+    isAnimating = true;
+    const fromEl = screens[current];
+    const toEl   = screens[step];
+    if (!fromEl || !toEl) { isAnimating = false; return; }
+
+    fromEl.dataset.state = dir === "forward" ? "leaving-left" : "leaving-right";
+    setTimeout(() => {
+      fromEl.style.display = "none";
+      fromEl.dataset.state = "idle";
+      toEl.style.display = "";
+      // force reflow
+      void toEl.offsetWidth;
+      toEl.dataset.state = "active";
+      current = step;
+      refreshProgress(step);
+      updateNavButtons();
+      // 进 run / result 时同步显示信息
+      if (step === "run") syncRunInfo();
+      isAnimating = false;
+    }, 200);
+  }
+  window.__obGotoStep = gotoStep;
+
+  function nextStep() {
+    const idx = STEPS.indexOf(current);
+    if (idx < STEPS.length - 1) {
+      if (current === "result") {
+        gotoStep("video", "backward");
+      } else {
+        gotoStep(STEPS[idx + 1], "forward");
+      }
+    }
+  }
+  function prevStep() {
+    const idx = STEPS.indexOf(current);
+    if (idx > 0) gotoStep(STEPS[idx - 1], "backward");
+  }
+
+  btnNext.addEventListener("click", nextStep);
+  btnBack.addEventListener("click", prevStep);
+  btnSkip.addEventListener("click", nextStep);
+  document.querySelectorAll(".ob-step-marker").forEach(m => {
+    m.addEventListener("click", () => {
+      const target = m.dataset.step;
+      const idx = STEPS.indexOf(target);
+      const curIdx = STEPS.indexOf(current);
+      if (idx < curIdx || isStepReady(STEPS[idx - 1] || "kb")) {
+        gotoStep(target, idx > curIdx ? "forward" : "backward");
+      }
+    });
+  });
+
+  // === 自动推进 hook ===
+  const kbInput = document.getElementById("kb-id");
+  if (kbInput) kbInput.addEventListener("input", updateNavButtons);
+
+  const annotFile = document.getElementById("annot-upload-file");
+  if (annotFile) annotFile.addEventListener("change", () => {
+    const f = annotFile.files && annotFile.files[0];
+    const sel = document.getElementById("ob-selected-file");
+    const nm = document.getElementById("ob-selected-name");
+    const dz = document.getElementById("ob-dropzone");
+    if (f && sel && nm) {
+      nm.textContent = f.name;
+      sel.dataset.show = "true";
+      if (dz) dz.dataset.active = "true";
+    }
+    updateNavButtons();
+  });
+  const clearBtn = document.getElementById("ob-clear-file");
+  if (clearBtn) clearBtn.addEventListener("click", () => {
+    if (annotFile) annotFile.value = "";
+    document.getElementById("ob-selected-file").dataset.show = "false";
+    const dz = document.getElementById("ob-dropzone");
+    if (dz) dz.dataset.active = "false";
+    updateNavButtons();
+  });
+  const annotSel = document.getElementById("annot-video");
+  if (annotSel) annotSel.addEventListener("change", updateNavButtons);
+
+  // dropzone drag highlight
+  const dz = document.getElementById("ob-dropzone");
+  if (dz) {
+    ["dragenter","dragover"].forEach(e => dz.addEventListener(e, ev => {
+      ev.preventDefault();
+      dz.classList.add("dragover");
+    }));
+    ["dragleave","drop"].forEach(e => dz.addEventListener(e, ev => {
+      ev.preventDefault();
+      dz.classList.remove("dragover");
+    }));
+  }
+
+  // === 同步 run 步信息 ===
+  function syncRunInfo() {
+    const kb = (document.getElementById("kb-id") || {}).value || "—";
+    const f = annotFile && annotFile.files && annotFile.files[0];
+    const sel = annotSel && annotSel.value;
+    const target = f ? f.name : (sel ? (annotSel.options[annotSel.selectedIndex] || {}).text : "—");
+    const kbEl = document.getElementById("ob-run-kb");
+    const vEl  = document.getElementById("ob-run-video");
+    if (kbEl) kbEl.textContent = kb || "—";
+    if (vEl)  vEl.textContent = target || "—";
+  }
+
+  // === Run CTA: 转发到原始 #btn-annotate;打开进度条扫光 ===
+  const obRunCta = document.getElementById("ob-run-cta");
+  const realBtnAnnotate = document.getElementById("btn-annotate");
+  const obRunProgress = document.getElementById("ob-run-progress");
+  const obRunStage = document.getElementById("ob-run-stage");
+  const obRunStageTitle = document.getElementById("ob-run-stage-title");
+  const obRunStageDesc = document.getElementById("ob-run-stage-desc");
+  const obRunStagePct = document.getElementById("ob-run-stage-pct");
+  const obRunStageMeta = document.getElementById("ob-run-stage-meta");
+
+  function inferAnnotateStage(statusText) {
+    const text = statusText || "";
+    if (/提交失败|失败/.test(text)) {
+      return { title: "标注失败", desc: "任务没有完成。可以查看错误信息后调整视频或参数再试。", done: true };
+    }
+    if (/已取消/.test(text)) {
+      return { title: "已取消", desc: "当前标注任务已停止。", done: true };
+    }
+    if (/完成/.test(text)) {
+      return { title: "标注完成", desc: "高光片段已生成，正在整理结果列表。", done: true };
+    }
+    if (/提交标注任务|任务已提交|临时视频已上传|等待/.test(text)) {
+      return { title: "任务已提交", desc: "后台已收到请求，正在排队并准备读取视频。", done: false };
+    }
+    if (/decode|切分|解码|clip|视频/.test(text)) {
+      return { title: "切分视频", desc: "正在解码视频并切成可检索的小片段。", done: false };
+    }
+    if (/embed|embedding|编码|向量/.test(text)) {
+      return { title: "编码画面向量", desc: "正在用当前 CLIP 编码器把每个片段转换成语义向量。", done: false };
+    }
+    if (/知识库|KB|检索|search/.test(text)) {
+      return { title: "匹配知识库样例", desc: "正在把视频片段和高光样例做相似度匹配。", done: false };
+    }
+    if (/合并|聚合|aggregate|merge/.test(text)) {
+      return { title: "合并候选片段", desc: "正在合并相邻命中片段，并计算最终分数。", done: false };
+    }
+    if (/轮询失败|重试/.test(text)) {
+      return { title: "等待服务响应", desc: "暂时没有拿到任务状态，正在自动重试。", done: false };
+    }
+    return { title: "运行标注流水线", desc: "正在依次完成切分、编码、知识库匹配和片段合并。", done: false };
+  }
+
+  function updateRunStage(statusText, progress = 0, elapsedText = "") {
+    if (!obRunStage) return;
+    const stage = inferAnnotateStage(statusText);
+    const pct = Math.max(0, Math.min(100, Math.round(progress || 0)));
+    obRunStage.dataset.show = "true";
+    if (obRunStageTitle) obRunStageTitle.textContent = stage.title;
+    if (obRunStageDesc) obRunStageDesc.textContent = stage.desc;
+    if (obRunStagePct) obRunStagePct.textContent = stage.done ? "完成" : `${pct}%`;
+    if (obRunStageMeta) {
+      const raw = (statusText || "").replace(/^\[[^\]]+\]\s*/, "").trim();
+      obRunStageMeta.textContent = [raw, elapsedText].filter(Boolean).join(" · ") || "通常需要 7-13 秒，长视频会更久。";
+    }
+  }
+
+  function hideRunStage() {
+    if (!obRunStage) return;
+    obRunStage.dataset.show = "false";
+  }
+
+  if (obRunCta && realBtnAnnotate) {
+    obRunCta.addEventListener("click", () => {
+      obRunCta.disabled = true;
+      if (obRunProgress) obRunProgress.dataset.running = "true";
+      updateRunStage("提交标注任务…", 3, "正在初始化");
+      realBtnAnnotate.click();
+    });
+  }
+  // 监听 annot-status 变化,标注完成时收起进度条 + 跳到 step 4
+  const annotStatus = document.getElementById("annot-status");
+  const annotResults = document.getElementById("annot-results");
+  if (annotResults) {
+    const mo = new MutationObserver(() => {
+      // 有 annot-row 出现,视为完成
+      if (annotResults.querySelector(".annot-row")) {
+        if (obRunCta) obRunCta.disabled = false;
+        if (obRunProgress) obRunProgress.dataset.running = "false";
+        updateRunStage("完成。正在展示结果。", 100, "");
+        setTimeout(hideRunStage, 2500);
+        const cnt = annotResults.querySelectorAll(".annot-row:not(.rejected)").length;
+        const rejectedCnt = annotResults.querySelectorAll(".annot-row.rejected").length;
+        const cntEl = document.getElementById("ob-result-count");
+        if (cntEl) cntEl.textContent = String(cnt);
+        const rejectedEl = document.getElementById("ob-result-rejected");
+        if (rejectedEl) {
+          rejectedEl.style.display = rejectedCnt ? "" : "none";
+          rejectedEl.textContent = rejectedCnt ? `· Qwen2-VL 拒绝 ${rejectedCnt} 个候选` : "";
+        }
+        const tEl = document.getElementById("ob-result-time");
+        const timing = document.getElementById("annot-timing");
+        if (tEl && timing && timing.style.display !== "none") {
+          const total = timing.querySelector(".pill.total b");
+          if (total) tEl.textContent = total.textContent;
+        }
+        if (current === "run") gotoStep("result", "forward");
+      }
+    });
+    mo.observe(annotResults, { childList: true });
+  }
+
+  if (annotStatus) {
+    const syncRunStageFromStatus = () => {
+      const text = annotStatus.textContent || "";
+      const pctMatch = text.match(/进度\s*(\d+)%/);
+      const elapsedMatch = text.match(/已用\s*([0-9]+s)/);
+      const pct = pctMatch ? Number(pctMatch[1]) : (/完成/.test(text) ? 100 : undefined);
+      updateRunStage(text, pct, elapsedMatch ? `已用 ${elapsedMatch[1]}` : "");
+      if (/完成|失败|已取消/.test(text)) {
+        setTimeout(hideRunStage, 2500);
+      }
+    };
+    const statusMo = new MutationObserver(syncRunStageFromStatus);
+    statusMo.observe(annotStatus, { childList: true, subtree: true, characterData: true });
+  }
+
+  // === 字节高光 toggle ===
+  const obByteToggle = document.getElementById("ob-bytedance-toggle");
+  const obByteSlot = document.getElementById("ob-bytedance-slot");
+  if (obByteToggle && obByteSlot) {
+    obByteToggle.addEventListener("click", () => {
+      obByteSlot.style.display = obByteSlot.style.display === "none" ? "" : "none";
+    });
+  }
+
+  // === 视频入库 drawer ===
+  const drawer = document.getElementById("ob-ingest-drawer");
+  const openIngest = document.getElementById("ob-open-ingest");
+  const closeIngest = document.getElementById("ob-ingest-drawer-close");
+  if (openIngest && drawer) openIngest.addEventListener("click", () => drawer.dataset.open = "true");
+  if (closeIngest && drawer) closeIngest.addEventListener("click", () => drawer.dataset.open = "false");
+  if (drawer) drawer.addEventListener("click", (e) => {
+    if (e.target === drawer) drawer.dataset.open = "false";
+  });
+
+  // === 语义检索 link:在标注流程视图与独立检索视图之间切换 ===
+  const openSearch = document.getElementById("ob-open-search");
+  if (openSearch) {
+    const searchLabelDefault = openSearch.innerHTML;
+    const searchLabelBack    = '<span style="font-size:13px;line-height:1">←</span><span>标注流程</span>';
+    const enterSearchView = () => {
+      document.body.classList.add("ob-search-view");
+      document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+      const ps = document.getElementById("page-search");
+      if (ps) ps.classList.add("active");
+      openSearch.innerHTML = searchLabelBack;
+      openSearch.dataset.mode = "back";
+      window.scrollTo({ top: 0, behavior: "instant" in window ? "instant" : "auto" });
+    };
+    const exitSearchView = () => {
+      document.body.classList.remove("ob-search-view");
+      const ps = document.getElementById("page-search");
+      if (ps) ps.classList.remove("active");
+      openSearch.innerHTML = searchLabelDefault;
+      openSearch.dataset.mode = "search";
+    };
+    openSearch.addEventListener("click", () => {
+      if (openSearch.dataset.mode === "back") exitSearchView();
+      else enterSearchView();
+    });
+	// 暴露给外部(顶层 hash 触发用)
+	window.__obEnterSearchView = enterSearchView;
+	window.__obExitSearchView  = exitSearchView;
+    if (location.hash === "#search" || location.search.includes("search=1")) {
+      enterSearchView();
+    }
+  }
+
+  // === 状态镜像:同步 sidebar 的 health → ob-status ===
+  const origDot  = document.getElementById("status-dot");
+  const origText = document.getElementById("status-text");
+  const obDot    = document.getElementById("ob-status-dot");
+  const obText   = document.getElementById("ob-status-text");
+  if (origDot && obDot) {
+    const mo = new MutationObserver(() => {
+      obDot.className = origDot.className;
+      if (origText && obText) obText.textContent = origText.textContent;
+    });
+    mo.observe(origDot, { attributes: true, attributeFilter: ["class"] });
+    mo.observe(origText, { childList: true, subtree: true, characterData: true });
+    obDot.className = origDot.className;
+    if (origText && obText) obText.textContent = origText.textContent;
+  }
+
+  const obStatusToggle = document.getElementById("ob-status-toggle");
+  if (obStatusToggle) {
+    obStatusToggle.addEventListener("click", () => {
+      const expanded = obStatusToggle.getAttribute("aria-expanded") === "true";
+      obStatusToggle.setAttribute("aria-expanded", String(!expanded));
+    });
+  }
+
+  // === 老用户 resume hint ===
+  (() => {
+    const savedKb = (function () { try { return localStorage.getItem("vrag.kb_id"); } catch { return null; } })();
+    if (!savedKb) return;
+    const hint = document.getElementById("ob-resume-hint");
+    const nameEl = document.getElementById("ob-resume-name");
+    const jump = document.getElementById("ob-resume-jump");
+    if (hint && nameEl) {
+      nameEl.textContent = savedKb;
+      hint.style.display = "flex";
+    }
+    if (jump) jump.addEventListener("click", () => {
+      gotoStep("video", "forward");
+    });
+  })();
+
+  // === 快捷键 ⌘/Ctrl 1-4 ===
+  document.addEventListener("keydown", (e) => {
+    if (!(e.metaKey || e.ctrlKey)) return;
+    const map = { "1": "kb", "2": "video", "3": "run", "4": "result" };
+    if (map[e.key]) {
+      e.preventDefault();
+      const target = map[e.key];
+      const targetIdx = STEPS.indexOf(target);
+      const curIdx = STEPS.indexOf(current);
+      gotoStep(target, targetIdx > curIdx ? "forward" : "backward");
+    }
+  });
+
+  // === 初始化 ===
+  refreshProgress("kb");
+  updateNavButtons();
+
+  // 调试用:?dbgstep=video|run|result 强制跳步(用于截图)
+  const u = new URLSearchParams(location.search);
+  const dbgStep = u.get("dbgstep");
+  if (dbgStep && STEPS.includes(dbgStep)) {
+    setTimeout(() => {
+      const kb = document.getElementById("kb-id");
+      if (kb && !kb.value) kb.value = "director-highlight";
+      gotoStep(dbgStep, "forward");
+    }, 500);
+  }
+})();
+</script>
+
+<script>
+// 顶层兜底:URL 带 #search 或 ?search=1 时,确保进入检索视图
+(function () {
+  const want = location.hash === "#search" || location.search.includes("search=1");
+  if (!want) return;
+  // 立即设置 class(CSS 同步生效),JS 异步处理 .active
+  document.body.classList.add("ob-search-view");
+  const apply = () => {
+    document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+    const ps = document.getElementById("page-search");
+    if (ps) ps.classList.add("active");
+    if (typeof window.__obEnterSearchView === "function") {
+      window.__obEnterSearchView();
+    }
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", apply);
+  } else {
+    apply();
+  }
+})();
+</script>
+
+</body>
+</html>

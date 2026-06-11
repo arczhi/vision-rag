@@ -1,0 +1,818 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vision RAG 链路地图</title>
+  <style>
+    :root {
+      --bg: #f7f8fb;
+      --panel: #ffffff;
+      --ink: #18212f;
+      --muted: #687385;
+      --line: #dbe1ea;
+      --accent: #1976d2;
+      --accent-soft: #e7f1ff;
+      --ok: #0f8b5f;
+      --warn: #b56405;
+      --risk: #b3261e;
+      --store: #6f43c0;
+      --model: #087f8c;
+      --api: #2f5aa8;
+      --ui: #7b5d00;
+      --shadow: 0 10px 30px rgba(23, 33, 48, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(247, 248, 251, 0.96);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(10px);
+    }
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+      padding: 14px 18px 10px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+    .sub {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .tools {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .search {
+      width: 260px;
+      max-width: 36vw;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px 10px;
+      color: var(--ink);
+      background: #fff;
+      font-size: 14px;
+      outline: none;
+    }
+    .search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      padding: 0 18px 14px;
+      overflow-x: auto;
+    }
+    button {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 8px;
+      padding: 8px 11px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    button:hover { border-color: #aeb8c6; }
+    button.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: #0b4f99;
+      font-weight: 650;
+    }
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 350px;
+      gap: 16px;
+      padding: 16px 18px 24px;
+    }
+    .map-wrap {
+      min-width: 0;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .legend span, .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      padding: 4px 8px;
+      white-space: nowrap;
+    }
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      display: inline-block;
+      background: var(--muted);
+    }
+    .dot.ui { background: var(--ui); }
+    .dot.api { background: var(--api); }
+    .dot.model { background: var(--model); }
+    .dot.store { background: var(--store); }
+    .dot.risk { background: var(--risk); }
+    .flow {
+      display: none;
+      grid-template-columns: repeat(var(--cols), minmax(245px, 1fr));
+      gap: 14px;
+      align-items: start;
+    }
+    .flow.active { display: grid; }
+    .stage {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      min-width: 0;
+    }
+    .stage-head {
+      padding: 12px 12px 10px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfcfe;
+    }
+    .stage-title {
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .stage-desc {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .nodes {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+    }
+    .node {
+      position: relative;
+      border: 1px solid var(--line);
+      background: #fff;
+      border-left: 5px solid var(--muted);
+      border-radius: 8px;
+      padding: 10px 10px 10px 12px;
+      min-height: 92px;
+      cursor: pointer;
+      transition: border-color .12s ease, box-shadow .12s ease, transform .12s ease;
+    }
+    .node:hover {
+      border-color: #a9b6c7;
+      box-shadow: 0 8px 18px rgba(23, 33, 48, 0.09);
+      transform: translateY(-1px);
+    }
+    .node.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft), 0 10px 26px rgba(25, 118, 210, 0.14);
+    }
+    .node.ui { border-left-color: var(--ui); }
+    .node.api { border-left-color: var(--api); }
+    .node.model { border-left-color: var(--model); }
+    .node.store { border-left-color: var(--store); }
+    .node.logic { border-left-color: var(--ok); }
+    .node.risk { border-left-color: var(--risk); }
+    .node:has(.mini.risk) {
+      background: #fffafa;
+      border-style: dashed;
+    }
+    .node:has(.mini.new) {
+      background: #fbfffd;
+    }
+    .node.hidden { display: none; }
+    .node-id {
+      position: absolute;
+      top: 9px;
+      right: 9px;
+      color: var(--muted);
+      font-size: 11px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: #f4f6f9;
+      border-radius: 5px;
+      padding: 2px 5px;
+    }
+    .node-title {
+      padding-right: 58px;
+      font-weight: 750;
+      font-size: 14px;
+      line-height: 1.25;
+    }
+    .node-summary {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .node-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 9px;
+    }
+    .mini {
+      border-radius: 999px;
+      padding: 2px 6px;
+      font-size: 11px;
+      background: #f3f6fa;
+      color: #4e5d70;
+    }
+    .mini.warn { background: #fff5e6; color: var(--warn); }
+    .mini.risk { background: #fdeceb; color: var(--risk); }
+    .mini.new { background: #eaf8f2; color: var(--ok); }
+    aside {
+      position: sticky;
+      top: 116px;
+      align-self: start;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      max-height: calc(100vh - 138px);
+      overflow: auto;
+    }
+    .detail {
+      padding: 15px;
+    }
+    .detail h2 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.25;
+    }
+    .detail-id {
+      display: inline-block;
+      margin-bottom: 8px;
+      color: var(--accent);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .detail-section {
+      border-top: 1px solid var(--line);
+      margin-top: 14px;
+      padding-top: 12px;
+    }
+    .detail-section h3 {
+      margin: 0 0 7px;
+      font-size: 13px;
+      color: #344154;
+    }
+    .detail-section p, .detail-section li {
+      font-size: 13px;
+      line-height: 1.55;
+      color: #2d3848;
+    }
+    .detail-section ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      background: #f3f6fa;
+      border-radius: 5px;
+      padding: 2px 5px;
+    }
+    .empty {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .route-note {
+      margin: 0 0 12px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 11px 12px;
+      color: #405066;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    @media (max-width: 1180px) {
+      main { grid-template-columns: 1fr; }
+      aside { position: static; max-height: none; }
+      .flow { grid-template-columns: repeat(2, minmax(240px, 1fr)); }
+    }
+    @media (max-width: 720px) {
+      .topbar { grid-template-columns: 1fr; }
+      .tools { justify-content: stretch; }
+      .search { width: 100%; max-width: none; }
+      .flow { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="topbar">
+      <div>
+        <h1>Vision RAG 执行链路地图</h1>
+        <div class="sub">点击节点看输入/输出/代码位置。评论模式可以直接框选任意节点告诉我怎么改。</div>
+      </div>
+      <div class="tools">
+        <input id="search" class="search" placeholder="搜索节点、代码文件、Qdrant、Qwen..." />
+        <button id="expandAll" type="button">展开全部</button>
+        <button id="compact" type="button">紧凑</button>
+      </div>
+    </div>
+    <nav id="tabs" class="tabs" aria-label="链路切换"></nav>
+  </header>
+
+  <main>
+    <section class="map-wrap">
+      <div class="legend">
+        <span><i class="dot ui"></i> UI/入口</span>
+        <span><i class="dot api"></i> API/任务</span>
+        <span><i class="dot model"></i> 模型/向量</span>
+        <span><i class="dot store"></i> Qdrant/持久化</span>
+        <span><i class="dot risk"></i> 易出问题/可改点</span>
+      </div>
+      <p id="routeNote" class="route-note"></p>
+      <div id="flows"></div>
+    </section>
+
+    <aside>
+      <div id="detail" class="detail">
+        <span class="detail-id">未选择节点</span>
+        <h2>先点一个节点</h2>
+        <div class="detail-section empty">
+          每个节点都有稳定 ID。你可以框选节点卡片，或在评论里写节点 ID，例如 <code>A10</code>。
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    const flows = [
+      {
+        id: "annotate",
+        title: "高光标注",
+        note: "从选择/上传视频开始，到 hybrid/Qdrant 召回、本地 Qwen2-VL 重排序、被拒候选、结果页面。当前本地理解切分是 extra candidates，不再替代默认召回。",
+        stages: [
+          {
+            title: "入口与任务",
+            desc: "前端提交参数，后端创建异步任务。",
+            nodes: [
+              {
+                id: "A00", type: "ui", title: "标注页参数",
+                summary: "选择视频或上传临时视频，设置高光样例表、阈值、z-score、Qwen 重排序、理解切分等标注参数。",
+                code: ["web/index.html #annotate", "api/server.py:1113", "api/server.py:1221"],
+                input: ["video_id 或上传文件", "kb_id=auto_llm", "threshold/z_threshold/top_k", "vl_rerank/use_local_vlm_segments"],
+                output: ["POST /annotate 或 /annotate/upload", "返回 task_id", "URL 写入 annot_task"],
+                change: ["这里适合改默认开关、参数命名、任务 URL 保留策略。"]
+              },
+              {
+                id: "A01", type: "api", title: "任务派发",
+                summary: "TaskManager 后台执行，前端轮询 /tasks/{task_id}。",
+                code: ["api/server.py:1113", "api/server.py:1221", "api/tasks.py"],
+                input: ["AnnotateRequest", "临时视频路径或库内视频路径"],
+                output: ["task.status/progress/message/result/extra"],
+                change: ["这里适合加 trace_id、步骤明细、失败码、可恢复状态。"]
+              }
+            ]
+          },
+          {
+            title: "切分决策",
+            desc: "决定 clip 候选从哪里来。",
+            nodes: [
+              {
+                id: "A02", type: "api", title: "云端 LLM 切分",
+                summary: "显式开启云端 qwen3.5-plus 时，先推理时间段；成功时作为 custom_segments 替代默认切片。",
+                code: ["api/server.py:1129", "ingest/llm_segments.py"],
+                input: ["use_llm_segments=true", "视频上传 TOS"],
+                output: ["custom_segments", "llm_segments_count", "llm_raw_preview"],
+                change: ["这里适合改云端切分 prompt、解析规则、失败回退。"],
+                flags: ["替代切片"]
+              },
+              {
+                id: "A03", type: "model", title: "本地 Qwen2-VL 理解切分",
+                summary: "滑窗理解整条视频，产出的高光窗口作为 extra_segments 并入默认召回，不再替代 hybrid。",
+                code: ["api/server.py:1159", "api/server.py:1333", "annotate/highlight_understander.py:613"],
+                input: ["use_local_vlm_segments=true", "window_s=6", "stride_s=3", "min_score=0.5"],
+                output: ["extra_segments", "local_vlm_segments_mode=extra_candidates", "local_vlm_segments"],
+                change: ["这里适合改窗口大小、打分门槛、是否保留每窗口负样本。"],
+                flags: ["新语义", "慢"]
+              },
+              {
+                id: "A04", type: "logic", title: "默认 hybrid 切分",
+                summary: "没有 custom_segments 时走默认全片切分：场景检测硬边界，长场景内 5s/2.5s 滑窗。",
+                code: ["annotate/annotator.py:241", "ingest/video_processor.py:110"],
+                input: ["VideoMeta", "SLICING_STRATEGY=hybrid"],
+                output: ["primary_clips", "scene/sub-scene clips"],
+                change: ["这里适合改默认召回粒度、scene_threshold、scene_max_len。"]
+              }
+            ]
+          },
+          {
+            title: "向量与召回",
+            desc: "把 clip 编码后查高光知识库。",
+            nodes: [
+              {
+                id: "A05", type: "model", title: "clip 抽帧与视觉向量",
+                summary: "每个 clip 抽最多 8 帧，encode_clip_frames 得到视觉向量。",
+                code: ["annotate/annotator.py:286", "ingest/video_processor.py:233", "ingest/embedding.py"],
+                input: ["primary_clips + extra_clips"],
+                output: ["clip_vecs", "timings.embed_ms", "num_clips"],
+                change: ["这里适合改抽帧策略、缓存、批量 embedding。"]
+              },
+              {
+                id: "A06", type: "store", title: "读取 highlight_example_v1 多向量",
+                summary: "读取针对高光 CLIP 表聚类/分类后的样例表；每个样例都有 visual/caption/transcript named vectors。",
+                code: ["annotate/annotator.py", "annotate/knowledge_base.py"],
+                input: ["kb_id=auto_llm", "当前 clip visual/caption/transcript query"],
+                output: ["高光类型", "样例 clip 引用", "score_breakdown"],
+                change: ["已改代码：highlight_example_v1 改为 named-vector 表，标注召回按多模态聚合。"],
+                flags: ["已修改"]
+              },
+              {
+                id: "A07", type: "risk", title: "已删除：回查 highlight_clips 多向量",
+                summary: "原来用当前 clip 去查 KB 样例引用的 highlight_clips visual/caption/transcript；现在从标注链路移除。",
+                code: ["annotate/annotator.py", "search/qdrant_retriever.py:840"],
+                input: ["旧：kb_samples + clip_vecs"],
+                output: ["旧：qdrant_context/score_breakdown"],
+                change: ["已改代码：annotator 不再调用 search_highlight_samples_multi。"],
+                flags: ["已删除"]
+              },
+              {
+                id: "A08", type: "risk", title: "已删除：legacy KB 兜底召回",
+                summary: "原来多模态回查失败时会 fallback 到旧单向量 KB 搜索；现在标注召回源统一为 highlight_example_v1。",
+                code: ["annotate/annotator.py", "annotate/knowledge_base.py:318"],
+                input: ["旧：clip_vecs"],
+                output: ["旧：legacy hits"],
+                change: ["已改代码：去掉回查失败后的 legacy fallback 分支。"],
+                flags: ["已删除"]
+              }
+            ]
+          },
+          {
+            title: "聚合与过滤",
+            desc: "从样例命中变成候选高光段。",
+            nodes: [
+              {
+                id: "A09", type: "logic", title: "按 label 聚合分数",
+                summary: "每个 clip 内按高光类型汇总 highlight_example_v1 的多模态样例匹配结果，计算类型平均分。",
+                code: ["annotate/annotator.py:353"],
+                input: ["example matches", "labels filter"],
+                output: ["raw_pairs=(clip,highlight_type,avg,evidence)"],
+                change: ["这里适合改 mean/max/top-k 聚合方式。"]
+              },
+              {
+                id: "A10", type: "logic", title: "绝对门 + z-score 相对门",
+                summary: "先看 avg >= threshold；同 label 样本数 >=3 时才启用 z_threshold，相对样本太少则只用绝对门。",
+                code: ["annotate/annotator.py:388"],
+                input: ["raw_pairs", "threshold", "normalize", "z_threshold"],
+                output: ["clip_label_score"],
+                change: ["这里适合改召回宽松度、small-n 策略、阈值展示。"],
+                flags: ["刚修"]
+              },
+              {
+                id: "A11", type: "logic", title: "时间合并与长度过滤",
+                summary: "同 label 的重叠/相邻 clip 合并；再按 min_duration/max_duration 过滤。",
+                code: ["annotate/annotator.py:417"],
+                input: ["clip_label_score", "merge_gap", "duration limits"],
+                output: ["candidate annotations"],
+                change: ["这里适合改过度合并、漏合并、短片段保留。"]
+              },
+              {
+                id: "A12", type: "risk", title: "已删除：帧级精化",
+                summary: "原来可用 label centroid 对候选段内帧再打分并改起止点；现在从标注运行链路和前端开关移除。",
+                code: ["annotate/annotator.py", "api/server.py", "web/index.html"],
+                input: ["旧：refine_frames/refine_fps/refine_min_seg"],
+                output: ["旧：refined annotations"],
+                change: ["已改代码：API 不再传入 refine 参数，前端不再展示帧级精化开关。"],
+                flags: ["已删除"]
+              },
+            ]
+          },
+          {
+            title: "Qwen 判断与输出",
+            desc: "本地 Qwen2-VL 判断、重排、拒绝、展示。",
+            nodes: [
+              {
+                id: "A13", type: "model", title: "本地 Qwen2-VL 重排序",
+                summary: "对全部最终候选做 Qwen 判断，生成 is_highlight、score、caption、reason、tags、cut_advice，并融合重排。",
+                code: ["annotate/annotator.py:481", "annotate/annotator.py:855", "annotate/highlight_understander.py:424"],
+                input: ["annotations", "current_clip qdrant_context", "reference sample summaries"],
+                output: ["vl_rank_score", "understanding", "rejected_annotations"],
+                change: ["这里适合改 prompt、重排公式、拒绝候选展示。"]
+              },
+              {
+                id: "A14", type: "logic", title: "本地切分候选并入",
+                summary: "本地理解切分已确认的高光段，如果不和已有 annotation 重叠超过半段，会追加进最终结果。",
+                code: ["api/server.py:957"],
+                input: ["outcome.annotations", "task.extra.local_vlm_segments"],
+                output: ["local_vlm_fallback_added", "used_local_vlm_fallback"],
+                change: ["这里适合改 overlap 阈值、是否进入被拒候选、是否二次重排。"],
+                flags: ["刚修"]
+              },
+              {
+                id: "A15", type: "ui", title: "结果页与反馈",
+                summary: "结果写入 task.result，前端用 annot_task 恢复；用户可播放、接受/拒绝反馈。",
+                code: ["web/index.html renderAnnotations", "api/server.py:1500", "annotate/feedback_store.py"],
+                input: ["annotations", "rejected_annotations", "timings"],
+                output: ["结果卡片", "feedback/highlight"],
+                change: ["这里适合改结果分组、字段解释、反馈入库规则。"]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        id: "ingest",
+        title: "视频入库",
+        note: "入库把视频切成 clip，生成 visual/caption/transcript 三路向量，写入 Qdrant highlight_clips。注意：入库里的本地/云端切分仍是替代默认切片，用于构建更高质量主索引。",
+        stages: [
+          {
+            title: "入口",
+            desc: "上传视频并启动后台任务。",
+            nodes: [
+              { id: "I00", type: "ui", title: "入库表单", summary: "上传视频，可选 skip_existing、segments_json、云端切分、本地 Qwen2-VL 切分。", code: ["web/index.html #ingest", "api/server.py:400"], input: ["file", "skip_existing", "segments_json"], output: ["task_id"], change: ["改入库默认开关、表单说明、进度显示。"] },
+              { id: "I01", type: "api", title: "保存文件", summary: "上传文件落到 data/videos，防止同名覆盖。", code: ["api/server.py:426"], input: ["UploadFile"], output: ["target path", "file_size"], change: ["改命名规则、临时目录、重复文件策略。"] },
+              { id: "I02", type: "api", title: "解析/选择 segments", summary: "segments_json、云端 LLM、本地 Qwen2-VL 三种方式都能生成 custom_segments。", code: ["api/server.py:443", "api/server.py:453"], input: ["segments_json", "use_llm_segments", "use_local_vlm_segments"], output: ["segs 或 None"], change: ["改优先级、失败回退、是否和默认切片合并。"], flags: ["替代切片"] }
+            ]
+          },
+          {
+            title: "切片与抽帧",
+            desc: "生成 Clip 对象。",
+            nodes: [
+              { id: "I03", type: "logic", title: "VideoProcessor.probe", summary: "读取 duration、fps、分辨率、帧数，并生成 video_id。", code: ["ingest/video_processor.py:72"], input: ["video_path"], output: ["VideoMeta"], change: ["改 video_id 规则、probe 后端。"] },
+              { id: "I04", type: "logic", title: "iter_clips 路由", summary: "custom_segments 优先；否则按 slicing_strategy 走 sliding/scene/hybrid。", code: ["ingest/video_processor.py:110"], input: ["VideoMeta", "custom_segments"], output: ["Clip iterator"], change: ["改是否 custom 替代默认、默认 strategy。"] },
+              { id: "I05", type: "logic", title: "hybrid 切分", summary: "PySceneDetect 找场景边界，长场景再 5s/2.5s 滑窗。", code: ["ingest/video_processor.py:140", "ingest/video_processor.py:190"], input: ["scene_threshold", "scene_max_len"], output: ["segments"], change: ["改切片密度、过短场景合并。"] },
+              { id: "I06", type: "model", title: "抽帧/缩略图", summary: "按 uniform/keyframe 抽最多 max_frames_per_clip 帧，resize 后给 encoder；可保存缩略图。", code: ["ingest/video_processor.py:233"], input: ["segments"], output: ["Clip.frames", "thumbnail_path"], change: ["改 keyframe 策略、解码后端、缩略图规则。"] }
+            ]
+          },
+          {
+            title: "模型理解",
+            desc: "入库阶段为每个 clip 生成三路向量和可搜索文本。",
+            nodes: [
+              { id: "I07", type: "model", title: "视觉向量", summary: "CLIPEncoder 只看 clip 画面帧，输出可做视觉相似度检索的 visual_vec；它不生成剧情文字。", code: ["ingest/pipeline.py:85", "ingest/embedding.py"], input: ["Clip.frames"], output: ["visual_vec"], change: ["改模型、batch、pooling、MPS/CPU。"] },
+              { id: "I08", type: "model", title: "字幕/ASR 文本", summary: "TranscriptProvider 读取或识别原视频对白，产出可读的 dialogue 文本和来源；这是文本事实层。", code: ["ingest/pipeline.py:75", "annotate/transcript.py"], input: ["video_path"], output: ["dialogue", "transcript_source"], change: ["改 ASR、字幕缓存、最大文本长度。"] },
+              { id: "I09", type: "model", title: "Qwen2-VL clip 理解", summary: "Qwen2-VL 同时看画面和对白，生成 caption/reason/tags/cut_advice/qwen_score；这是语义理解层，比 I07 慢但更像剧情判断。", code: ["ingest/pipeline.py:116", "annotate/highlight_understander.py:424"], input: ["clip frames", "dialogue"], output: ["understanding", "qwen_score", "qwen_is_highlight"], change: ["改入库 prompt、是否启用 QDRANT_ENABLE_VLM_CAPTION。"], flags: ["慢"] },
+              { id: "I10", type: "model", title: "caption/字幕向量", summary: "把 I09 的 caption_text 和 I08 的 dialogue/transcript_text 分别 encode_texts 成向量；transcript 在这里不是新字幕，而是字幕文本的检索向量 lane。", code: ["ingest/pipeline.py:89"], input: ["caption_text", "transcript_text"], output: ["caption_vec", "transcript_vec"], change: ["改文本构造、无台词占位、模型维度。"] }
+            ]
+          },
+          {
+            title: "Qdrant 写入",
+            desc: "主索引 highlight_clips。",
+            nodes: [
+              { id: "I11", type: "store", title: "构造 QdrantClipRecord", summary: "每个 clip 带 visual/caption/transcript 三路向量和 payload。", code: ["ingest/pipeline.py:92", "search/qdrant_retriever.py:113"], input: ["vecs", "payload"], output: ["QdrantClipRecord"], change: ["改 payload 字段、向量名、clip_index 语义。"] },
+              { id: "I12", type: "store", title: "insert highlight_clips", summary: "用 point_id=collection+video_id+clip_index 写入 Qdrant named vectors。", code: ["search/qdrant_retriever.py:252", "search/qdrant_retriever.py:311"], input: ["records"], output: ["Qdrant points"], change: ["改 upsert/delete、collection schema、命名向量。"] },
+              { id: "I13", type: "api", title: "入库结果", summary: "返回 video_id、num_clips、used_local_vlm_segments 等；/videos 和 /clips 从 Qdrant 读。", code: ["api/server.py:537", "api/server.py:190", "api/server.py:207"], input: ["IngestStats"], output: ["task.result", "videos/clips API"], change: ["改列表展示、健康检查、重建任务。"] }
+            ]
+          }
+        ]
+      },
+      {
+        id: "search",
+        title: "视频检索",
+        note: "文本搜索走 visual/caption/transcript 三路 Qdrant 召回并融合，短中文 query 还有词面召回；图片搜索只走 visual lane，再进入 reranker/merge。",
+        stages: [
+          {
+            title: "入口",
+            desc: "文本或图片检索都异步执行。",
+            nodes: [
+              { id: "S00", type: "ui", title: "检索页", summary: "输入文本或上传图片，设置 top_k、coarse_k、rerank、rerank_mode。", code: ["web/index.html search UI", "api/server.py:625", "api/server.py:649"], input: ["query text 或 image file"], output: ["task_id"], change: ["改默认 coarse_k、重排模式、图片搜索限制。"] },
+              { id: "S01", type: "api", title: "SearchPipeline", summary: "API 调 state.search.search_text/search_image，任务完成后返回结果和 timings。", code: ["search/pipeline.py:58", "api/server.py:628"], input: ["SearchTextRequest 或 image temp path"], output: ["SearchOutcome"], change: ["改任务进度、错误暴露、结果字段。"] }
+            ]
+          },
+          {
+            title: "Query 编码",
+            desc: "把用户输入变成查询向量。",
+            nodes: [
+              { id: "S02", type: "model", title: "文本 query 向量", summary: "encode_texts([query]) 得到一个向量，同时用于 visual/caption/transcript lanes。", code: ["search/pipeline.py:78"], input: ["query"], output: ["q_vec"], change: ["改中文 query 预处理、模型、prompt 化 query。"] },
+              { id: "S03", type: "model", title: "图片 query 向量", summary: "图片转 RGB 后 encode_images，只查 visual named vector。", code: ["search/pipeline.py:133"], input: ["image"], output: ["q_vec"], change: ["改图片裁剪、多图 query、图片检索 rerank。"] }
+            ]
+          },
+          {
+            title: "Qdrant 粗召回",
+            desc: "从 highlight_clips 拿候选。",
+            nodes: [
+              { id: "S04", type: "store", title: "search_multi 多路召回", summary: "分别 query named vectors，再按配置权重融合：visual/caption/transcript。", code: ["search/pipeline.py:82", "search/qdrant_retriever.py:620"], input: ["query_vectors", "weights", "per_vector_k"], output: ["ClipHit[]", "score_breakdown"], change: ["改权重、per lane top_k、是否用 RRF。"] },
+              { id: "S05", type: "logic", title: "短 query 词面召回", summary: "文本搜索会扫描 payload 文本，给明确命中的 caption/transcript/qwen 字段一个 lexical floor。", code: ["search/qdrant_retriever.py:657", "search/qdrant_retriever.py:720"], input: ["query_text", "payload text fields"], output: ["lexical lane score"], change: ["改短词规则、字段权重、是否替代向量。"], flags: ["易影响相关度"] },
+              { id: "S06", type: "logic", title: "融合排序", summary: "按 active lane 权重求 combined score，多路命中有少量覆盖奖励。", code: ["search/qdrant_retriever.py:673"], input: ["lane_scores", "lexical_score"], output: ["coarse hits"], change: ["改融合公式、score floor、覆盖奖励。"] }
+            ]
+          },
+          {
+            title: "重排与展示",
+            desc: "候选变成用户看到的片段。",
+            nodes: [
+              { id: "S07", type: "model", title: "Reranker", summary: "rerank=false 直接返回；merge/clip 用 CLIP 二次打分并聚合；internvl 模式走 MLX Qwen2-VL/多模态打分。", code: ["search/pipeline.py:106", "search/reranker.py:44"], input: ["query", "coarse hits"], output: ["ClipResult[]"], change: ["改 merge_gap、Qwen rerank prompt、图片模式降级。"] },
+              { id: "S08", type: "logic", title: "相邻片段聚合", summary: "把同视频相邻/重叠 hits 合并成更完整结果，带 clip_indices 和 hits。", code: ["search/reranker.py"], input: ["reranked hits"], output: ["ClipResult"], change: ["改合并跨度、score 汇总、重复结果。"] },
+              { id: "S09", type: "ui", title: "检索结果预览", summary: "前端展示片段、score、缩略图，点击打开视频预览。", code: ["web/index.html renderSearchResults", "api/server.py stream routes"], input: ["task.result.results"], output: ["结果卡片", "preview modal"], change: ["改解释字段、score breakdown、播放错误。"] }
+            ]
+          }
+        ]
+      },
+      {
+        id: "kb",
+        title: "高光知识库",
+        note: "高光标注依赖 highlight_example_v1；它从高光 CLIP 表中挑候选、聚类、命名、去重，形成可复用的分类聚合样例表。",
+        stages: [
+          {
+            title: "候选来源",
+            desc: "从入库时的 Qwen 理解结果里找潜在高光。",
+            nodes: [
+              { id: "K00", type: "api", title: "auto-kb/run", summary: "启动自动构建高光库任务，可 force_full 清空后重建。", code: ["api/server.py:1934"], input: ["kb_id", "candidate_mode", "min_qwen_score"], output: ["task_id"], change: ["改默认候选策略、重建方式。"] },
+              { id: "K01", type: "store", title: "扫描 highlight_clips", summary: "读取 Qdrant payload 与 visual vector，按 qwen_is_highlight/qwen_score/tags 选候选。", code: ["search/qdrant_retriever.py:468"], input: ["highlight_clips points"], output: ["candidate rows"], change: ["改 strict/broad 策略、负向标签过滤。"] },
+              { id: "K02", type: "model", title: "Qwen2-VL 精判候选", summary: "可选对候选再次结合多模态上下文判断保留/拒绝。", code: ["api/server.py:1951"], input: ["rows_for_candidates"], output: ["vlm_stats", "refined_rows"], change: ["改 refine limit、prompt、错误统计。"] }
+            ]
+          },
+          {
+            title: "聚类与命名",
+            desc: "把候选整理成可复用标签样例。",
+            nodes: [
+              { id: "K03", type: "model", title: "视觉+文本融合向量", summary: "候选描述 encode_texts，与视觉向量按 TEXT_WEIGHT 融合并归一化。", code: ["annotate/auto_kb.py:47"], input: ["visual_vec", "description"], output: ["fused vectors"], change: ["改融合权重、描述字段。"] },
+              { id: "K04", type: "logic", title: "KMeans/HDBSCAN 聚类", summary: "默认 KMeans K≈sqrt(N)，孤立小簇标噪声；失败才 HDBSCAN。", code: ["annotate/auto_kb.py:62"], input: ["fused vectors"], output: ["cluster labels"], change: ["改 K、min cluster、噪声策略。"] },
+              { id: "K05", type: "model", title: "本地 Qwen2-VL 簇命名", summary: "每簇取描述和缩略图，让本地 Qwen2-VL 输出 4-8 字抽象标签。", code: ["annotate/auto_kb.py:234", "annotate/highlight_understander.py:542"], input: ["cluster members"], output: ["label name"], change: ["改命名 prompt、参考标签体系。"] }
+            ]
+          },
+          {
+            title: "写入与消费",
+            desc: "KB 样例进入标注召回。",
+            nodes: [
+              { id: "K06", type: "store", title: "写 highlight_example_v1 多向量", summary: "面向高光 CLIP 的分类聚合表：每个代表样例写 visual/caption/transcript 三路 named vectors。", code: ["api/server.py:/auto-kb/run", "annotate/auto_kb.py", "annotate/knowledge_base.py"], input: ["高光 clip candidates", "cluster labels", "caption/transcript text"], output: ["highlight_example_v1 named vectors"], change: ["已改代码：自动高光归纳写入三路 named vectors，不再是单向量样例表。"], flags: ["已修改"] },
+              { id: "K07", type: "store", title: "标注消费样例表", summary: "高光标注读取 highlight_example_v1，把当前 clip 的 visual/caption/transcript 与样例表多路召回并聚合。", code: ["annotate/annotator.py", "annotate/knowledge_base.py"], input: ["highlight_example_v1 named vectors"], output: ["高光标注 evidence_samples", "score_breakdown"], change: ["已改代码：标注召回源统一为 highlight_example_v1 多模态样例表。"], flags: ["已修改"] },
+              { id: "K08", type: "ui", title: "KB 管理与反馈闭环", summary: "前端列 KB、样例、重命名标签；标注反馈可作为后续样例来源。", code: ["api/server.py:977", "api/server.py:1925", "api/server.py:1500"], input: ["用户反馈", "KB samples"], output: ["label_counts", "feedback rows"], change: ["改人工审核、接受/拒绝如何反哺 KB。"] }
+            ]
+          }
+        ]
+      }
+    ];
+
+    const state = { flowId: "annotate", activeNodeId: null, compact: false };
+
+    function tagList(items) {
+      if (!items || !items.length) return "<p class=\"empty\">无</p>";
+      return `<ul>${items.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function renderTabs() {
+      const tabs = document.getElementById("tabs");
+      tabs.innerHTML = flows.map(flow => (
+        `<button type="button" class="${flow.id === state.flowId ? "active" : ""}" data-flow-tab="${flow.id}">${escapeHtml(flow.title)}</button>`
+      )).join("");
+      tabs.querySelectorAll("[data-flow-tab]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          state.flowId = btn.dataset.flowTab;
+          state.activeNodeId = null;
+          render();
+        });
+      });
+    }
+
+    function nodeBadges(node) {
+      const badges = [];
+      badges.push(`<span class="mini">${escapeHtml(node.type)}</span>`);
+      for (const flag of node.flags || []) {
+        const cls = flag.includes("修") || flag.includes("新") ? "new" : (flag.includes("慢") || flag.includes("替代") ? "warn" : "risk");
+        badges.push(`<span class="mini ${cls}">${escapeHtml(flag)}</span>`);
+      }
+      return badges.join("");
+    }
+
+    function renderFlows() {
+      const root = document.getElementById("flows");
+      const html = flows.map(flow => {
+        const stages = flow.stages.map(stage => {
+          const nodes = stage.nodes.map(node => `
+            <article class="node ${escapeHtml(node.type)} ${node.id === state.activeNodeId ? "active" : ""}" data-node-id="${escapeHtml(node.id)}" data-search="${escapeHtml(JSON.stringify(node))}">
+              <span class="node-id">${escapeHtml(node.id)}</span>
+              <div class="node-title">${escapeHtml(node.title)}</div>
+              <div class="node-summary">${escapeHtml(node.summary)}</div>
+              <div class="node-meta">${nodeBadges(node)}</div>
+            </article>
+          `).join("");
+          return `
+            <section class="stage">
+              <div class="stage-head">
+                <div class="stage-title">${escapeHtml(stage.title)}</div>
+                <div class="stage-desc">${escapeHtml(stage.desc)}</div>
+              </div>
+              <div class="nodes">${nodes}</div>
+            </section>
+          `;
+        }).join("");
+        return `<div class="flow ${flow.id === state.flowId ? "active" : ""}" data-flow="${flow.id}" style="--cols:${flow.stages.length}">${stages}</div>`;
+      }).join("");
+      root.innerHTML = html;
+      root.querySelectorAll(".node").forEach(nodeEl => {
+        nodeEl.addEventListener("click", () => {
+          state.activeNodeId = nodeEl.dataset.nodeId;
+          renderDetails(findNode(state.activeNodeId));
+          root.querySelectorAll(".node").forEach(el => el.classList.toggle("active", el.dataset.nodeId === state.activeNodeId));
+        });
+      });
+    }
+
+    function findNode(id) {
+      for (const flow of flows) {
+        for (const stage of flow.stages) {
+          const found = stage.nodes.find(node => node.id === id);
+          if (found) return { ...found, flowTitle: flow.title, stageTitle: stage.title };
+        }
+      }
+      return null;
+    }
+
+    function renderDetails(node) {
+      const detail = document.getElementById("detail");
+      if (!node) {
+        detail.innerHTML = `
+          <span class="detail-id">未选择节点</span>
+          <h2>先点一个节点</h2>
+          <div class="detail-section empty">每个节点都有稳定 ID。你可以框选节点卡片，或在评论里写节点 ID，例如 <code>A10</code>。</div>
+        `;
+        return;
+      }
+      detail.innerHTML = `
+        <span class="detail-id">${escapeHtml(node.id)} · ${escapeHtml(node.flowTitle)} / ${escapeHtml(node.stageTitle)}</span>
+        <h2>${escapeHtml(node.title)}</h2>
+        <div class="detail-section">
+          <h3>节点说明</h3>
+          <p>${escapeHtml(node.summary)}</p>
+        </div>
+        <div class="detail-section">
+          <h3>输入</h3>
+          ${tagList(node.input)}
+        </div>
+        <div class="detail-section">
+          <h3>输出</h3>
+          ${tagList(node.output)}
+        </div>
+        <div class="detail-section">
+          <h3>代码位置</h3>
+          ${tagList((node.code || []).map(c => "`" + c + "`"))}
+        </div>
+        <div class="detail-section">
+          <h3>适合改什么</h3>
+          ${tagList(node.change)}
+        </div>
+      `;
+    }
+
+    function applySearch() {
+      const q = document.getElementById("search").value.trim().toLowerCase();
+      document.querySelectorAll(".node").forEach(node => {
+        const hay = (node.dataset.search || "").toLowerCase();
+        node.classList.toggle("hidden", !!q && !hay.includes(q));
+      });
+    }
+
+    function render() {
+      const flow = flows.find(item => item.id === state.flowId) || flows[0];
+      document.getElementById("routeNote").textContent = flow.note;
+      renderTabs();
+      renderFlows();
+      renderDetails(state.activeNodeId ? findNode(state.activeNodeId) : null);
+      document.body.classList.toggle("is-compact", state.compact);
+      applySearch();
+    }
+
+    document.getElementById("search").addEventListener("input", applySearch);
+    document.getElementById("expandAll").addEventListener("click", () => {
+      document.querySelectorAll(".node.hidden").forEach(node => node.classList.remove("hidden"));
+      document.getElementById("search").value = "";
+    });
+    document.getElementById("compact").addEventListener("click", () => {
+      state.compact = !state.compact;
+      document.querySelectorAll(".node-summary").forEach(el => {
+        el.style.display = state.compact ? "none" : "";
+      });
+      document.getElementById("compact").classList.toggle("active", state.compact);
+    });
+
+    render();
+  </script>
+</body>
+</html>
