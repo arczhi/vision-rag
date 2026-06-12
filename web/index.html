@@ -896,6 +896,29 @@
   .annot-row .head .score {
     color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 500;
   }
+  .annot-row .modal-scores {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 2px;
+  }
+  .annot-row .modal-score {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .annot-row .modal-score b {
+    color: var(--text-2);
+    font-weight: 600;
+  }
   .annot-row .meta { color: var(--muted); font-size: 11.5px; }
   .annot-row .evidence {
     color: var(--muted); font-size: 11.5px;
@@ -2565,7 +2588,7 @@
           <label>精度开关</label>
           <div class="row" style="gap:14px">
             <label class="switch-line"><input type="checkbox" id="annot-normalize" checked> z-score</label>
-            <label class="switch-line" title="对 Qdrant/高光库召回候选调用本地 Qwen2-VL, 判断是否高光, 生成理由/标签/剪辑建议, 并按 Qwen 分数与召回分融合重排序。首次加载会较慢。"><input type="checkbox" id="annot-vl-rerank" checked> 本地 Qwen2-VL 重排序</label>
+            <label class="switch-line" title="对 Qdrant/高光库召回候选调用本地 Qwen2-VL, 判断是否高光, 生成理由/标签/剪辑建议, 并按 Qwen 分数与召回分融合重排序。默认关闭, 关闭时只看知识库匹配结果。"><input type="checkbox" id="annot-vl-rerank"> 本地 Qwen2-VL 重排序</label>
             <label class="switch-line" title="额外先用本地 Qwen2-VL 对整条视频滑窗理解并切出候选高光时间段。更慢, 适合召回漏掉高光时。"><input type="checkbox" id="annot-local-vlm-segments"> 本地 Qwen2-VL 理解切分</label>
             <label class="switch-line" title="仅勾选时调用云端 qwen3.5-plus 做视频高光时间戳切分；默认关闭。"><input type="checkbox" id="annot-cloud-llm"> 云端 qwen3.5-plus 切分</label>
           </div>
@@ -2908,6 +2931,14 @@ function fmtTime(s) {
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
+function hasValue(v) {
+  return v !== null && v !== undefined && v !== "";
+}
+function finiteNumber(v) {
+  if (!hasValue(v)) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
 function fmtMs(v, digits = 0) {
   const n = Number(v) || 0;
   if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 1 : 2)} s`;
@@ -2990,6 +3021,52 @@ function annotationThumbUrl(result, annot) {
     return `/temp-videos/${encodeURIComponent(videoId)}/thumbnail?t=${t}`;
   }
   return `/videos/${encodeURIComponent(videoId)}/thumbnail?t=${t}`;
+}
+
+const MODALITY_LABELS = {
+  visual: "视觉",
+  caption: "画面描述",
+  transcript: "台词",
+  text: "文本",
+  qwen: "Qwen",
+};
+function annotationModalityScores(annot) {
+  const byMode = {};
+  const addBreakdown = (breakdown) => {
+    if (!breakdown || typeof breakdown !== "object") return;
+    Object.entries(breakdown).forEach(([mode, value]) => {
+      const score = finiteNumber(value);
+      if (score == null) return;
+      const key = String(mode || "").trim();
+      if (!key) return;
+      byMode[key] = Math.max(byMode[key] ?? -Infinity, score);
+    });
+  };
+  addBreakdown(annot.score_breakdown);
+  (annot.evidence_samples || []).forEach(e => addBreakdown(e.score_breakdown));
+  const order = ["visual", "caption", "transcript"];
+  return Object.entries(byMode)
+    .filter(([, score]) => Number.isFinite(score))
+    .sort(([a], [b]) => {
+      const ia = order.indexOf(a);
+      const ib = order.indexOf(b);
+      if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+      return a.localeCompare(b);
+    });
+}
+function renderAnnotationModalityScores(annot) {
+  const entries = annotationModalityScores(annot);
+  if (!entries.length) return "";
+  const chips = entries
+    .map(([mode, score]) => {
+      const label = MODALITY_LABELS[mode] || mode;
+      return `<span class="modal-score"><span>${escapeHtml(label)}</span><b>${score.toFixed(3)}</b></span>`;
+    })
+    .join("");
+  const title = entries
+    .map(([mode, score]) => `${MODALITY_LABELS[mode] || mode} ${score.toFixed(4)}`)
+    .join(" · ");
+  return `<div class="modal-scores" title="${escapeHtml(title)}">${chips}</div>`;
 }
 
 // ---------- video preview modal ----------
@@ -4042,24 +4119,32 @@ $("#btn-samples-refresh").addEventListener("click", () => {
 $("#btn-auto-kb-run").addEventListener("click", async () => {
   const btn = $("#btn-auto-kb-run");
   const st = $("#auto-kb-status");
-  if (!confirm("将对 SQLite 中所有 LLM 高光段重新聚类 + 命名, 并清掉旧的 auto_llm 知识库后全量重建. 继续?")) return;
+  if (!confirm("将从 Qdrant 主视频片段宽召回待复核候选, 经本地 Qwen2-VL 精判后重新聚类 + 命名, 并清掉旧的 auto_llm 知识库后全量重建. 继续?")) return;
   btn.disabled = true;
   st.style.display = "";
-  st.textContent = "查询待归纳高光段…";
+  st.textContent = "查询 Qdrant 待归纳高光候选…";
   try {
     const s = await fetch("/auto-kb/stats").then(r => r.json());
-    if ((s.total || 0) === 0) {
-      st.textContent = "SQLite 还没有任何 LLM 高光段。先用 qwen3.5-plus 推理切分入库一些视频再归纳。";
+    if ((s.total_clips || 0) === 0) {
+      st.textContent = "Qdrant 主视频库还没有片段。先入库视频再归纳。";
       btn.disabled = false;
       return;
     }
-    st.textContent = `提交全量归纳任务 (总 ${s.total} 段)…`;
+    st.textContent = `提交全量归纳任务 (Qdrant ${s.total_clips} 个片段, 本地 Qwen2-VL 复核)…`;
     const subm = await fetch("/auto-kb/run", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         text_weight: 0.5, min_cluster_size: 2,
         kb_id: "auto_llm", name_with_llm: true,
         force_full: true,
+        candidate_mode: "review",
+        min_qwen_score: 0.35,
+        broad_min_qwen_score: 0.15,
+        target_candidates: 240,
+        per_video_limit: 8,
+        vlm_refine: true,
+        vlm_refine_limit: 240,
+        vlm_min_score: 0.45,
       }),
     }).then(r => r.json());
     const tid = subm.task_id;
@@ -4273,20 +4358,23 @@ function renderAnnotations(j) {
     const dialogueHtml = a.dialogue
       ? `<div class="dialogue" title="${escapeHtml(a.dialogue)}"><b>台词</b> ${escapeHtml(a.dialogue.slice(0, 180))}</div>`
       : "";
-    const mainScore = Number(a.score);
-    const rankScore = Number(a.vl_rank_score);
-    const baseScore = Number(a.base_score);
-    const vlScore = Number(a.vl_score);
-    const hasRankScore = Number.isFinite(rankScore);
+    const mainScore = finiteNumber(a.score);
+    const rankScore = finiteNumber(a.vl_rank_score);
+    const baseScore = finiteNumber(a.base_score);
+    const vlScore = finiteNumber(a.vl_score);
+    const hasRankScore = rankScore != null;
+    const selectedScore = baseScore ?? mainScore;
     const scoreText = hasRankScore
       ? `重排 ${rankScore.toFixed(4)}`
-      : `score ${Number.isFinite(mainScore) ? mainScore.toFixed(4) : "—"}`;
+      : `入选分数 ${selectedScore != null ? selectedScore.toFixed(4) : "—"}`;
     const scoreTitleParts = [];
     if (hasRankScore) scoreTitleParts.push(`重排序分 ${rankScore.toFixed(4)}`);
-    if (Number.isFinite(baseScore)) scoreTitleParts.push(`召回分 ${baseScore.toFixed(4)}`);
-    if (Number.isFinite(vlScore)) scoreTitleParts.push(`Qwen 分 ${(vlScore * 100).toFixed(0)}`);
+    if (selectedScore != null) scoreTitleParts.push(`入选分数 ${selectedScore.toFixed(4)}`);
+    if (baseScore != null && baseScore !== selectedScore) scoreTitleParts.push(`召回分 ${baseScore.toFixed(4)}`);
+    if (vlScore != null) scoreTitleParts.push(`Qwen 分 ${(vlScore * 100).toFixed(0)}`);
     if (a.vl_rank_reason) scoreTitleParts.push(String(a.vl_rank_reason));
     const scoreTitle = scoreTitleParts.join(" · ");
+    const modalityScoresHtml = renderAnnotationModalityScores(a);
     row.innerHTML = `
       ${thumb}
       <div class="info">
@@ -4297,6 +4385,7 @@ function renderAnnotations(j) {
           <span class="meta">${a.duration.toFixed(1)}s · ${(a.clip_indices||[]).length} 个 clip</span>
           ${rejected ? `<span class="meta">被 Qwen2-VL 拒绝</span>` : ""}
         </div>
+        ${modalityScoresHtml}
         <div class="evidence" title="${escapeHtml(evidenceList)}">触发样例: ${evidenceList || "—"}</div>
         ${dialogueHtml}
         ${understandingHtml}
@@ -4959,6 +5048,10 @@ $("#btn-bytedance-annotate").addEventListener("click", async () => {
       obStatusToggle.setAttribute("aria-expanded", String(!expanded));
     });
   }
+
+  // 标注默认只展示知识库匹配结果；用户手动勾选后才启用本地 Qwen2-VL 重排序。
+  const annotVlRerank = document.getElementById("annot-vl-rerank");
+  if (annotVlRerank) annotVlRerank.checked = false;
 
   // === 老用户 resume hint ===
   (() => {

@@ -1850,11 +1850,11 @@ def auto_kb_stats() -> dict[str, Any]:
 @app.get("/auto-kb/highlights")
 def auto_kb_highlights(
     limit: int = 200,
-    min_qwen_score: float = 0.5,
-    candidate_mode: str = "balanced",
-    broad_min_qwen_score: float = 0.35,
-    target_candidates: int = 80,
-    per_video_limit: int = 4,
+    min_qwen_score: float = 0.35,
+    candidate_mode: str = "broad",
+    broad_min_qwen_score: float = 0.15,
+    target_candidates: int = 240,
+    per_video_limit: int = 8,
 ) -> dict[str, Any]:
     """列出 Qdrant 主片段中可用于自动分类的高光候选。"""
     rows = state.retriever.get_highlight_candidate_rows(
@@ -1891,13 +1891,13 @@ class AutoKbRunRequest(BaseModel):
     name_with_llm: bool = True
     force_full: bool = False          # True 时清掉 kb_id 全部样例后全量重聚类
     limit: int = 4096
-    min_qwen_score: float = 0.5
-    candidate_mode: str = "balanced"
-    broad_min_qwen_score: float = 0.35
-    target_candidates: int = 80
-    per_video_limit: int = 4
+    min_qwen_score: float = 0.35
+    candidate_mode: str = "review"
+    broad_min_qwen_score: float = 0.15
+    target_candidates: int = 240
+    per_video_limit: int = 8
     vlm_refine: bool = True
-    vlm_refine_limit: int = 120
+    vlm_refine_limit: int = 240
     vlm_min_score: float = 0.45
     vlm_max_frames: int = 2
     vlm_max_tokens: int = 220
@@ -1922,9 +1922,20 @@ def auto_kb_run(req: AutoKbRunRequest) -> dict[str, Any]:
     def _run(task, req_obj: AutoKbRunRequest):
         import numpy as np
         from annotate.auto_kb import HighlightCandidate, auto_categorize_and_upsert
+        from annotate.highlight_understander import _has_negative_highlight_text
 
         task.message = "扫描 Qdrant 高光候选片段"
         task.progress = 0.1
+        review_mode = str(req_obj.candidate_mode or "").lower() in {"review", "vlm_review", "refine"}
+        if review_mode and not req_obj.vlm_refine:
+            return {
+                "inserted": 0,
+                "skipped": 0,
+                "label_count": {},
+                "cluster_count": 0,
+                "kb_id": req_obj.kb_id,
+                "error": "candidate_mode=review requires vlm_refine=true",
+            }
         if req_obj.force_full:
             try:
                 state.kb.retriever.delete_kb(req_obj.kb_id)
@@ -1954,13 +1965,17 @@ def auto_kb_run(req: AutoKbRunRequest) -> dict[str, Any]:
                 logger.warning(f"list existing qdrant kb samples failed: {e}")
 
         rows_for_candidates = []
+        skipped_existing_count = 0
+        skipped_invalid_count = 0
         for r in rows:
             video_id = str(r.get("video_id") or "")
             clip_index = int(r.get("clip_index") or 0)
             sample_id = f"{video_id}:{clip_index}"
             if sample_id in existing_ids:
+                skipped_existing_count += 1
                 continue
             if not video_id or r.get("embedding") is None:
+                skipped_invalid_count += 1
                 continue
             rows_for_candidates.append(r)
 
@@ -2001,8 +2016,13 @@ def auto_kb_run(req: AutoKbRunRequest) -> dict[str, Any]:
                             vlm_stats["errors"] += 1
                             if "unavailable" in u.error or "disabled" in u.error:
                                 vlm_stats["unavailable"] = True
+                                if review_mode:
+                                    break
                             continue
                         score = float(u.score) if u.score is not None else 0.0
+                        if _has_negative_highlight_text(u.caption, u.reason, u.cut_advice):
+                            vlm_stats["rejected"] += 1
+                            continue
                         if u.is_highlight is True or score >= float(req_obj.vlm_min_score):
                             nr = dict(r)
                             nr["candidate_reason"] = f"{r.get('candidate_reason') or 'qdrant'}+vlm"
@@ -2029,9 +2049,21 @@ def auto_kb_run(req: AutoKbRunRequest) -> dict[str, Any]:
                     except Exception as e:
                         logger.warning("auto-kb qwen2-vl refine failed: %s", e)
                         vlm_stats["errors"] += 1
-            if len(rows_for_candidates) > len(rows_to_check):
+            if len(rows_for_candidates) > len(rows_to_check) and not review_mode:
                 refined_rows.extend(rows_for_candidates[len(rows_to_check):])
-            if refined_rows or not vlm_stats["unavailable"]:
+            if review_mode:
+                if vlm_stats["unavailable"]:
+                    return {
+                        "inserted": 0,
+                        "skipped": 0,
+                        "label_count": {},
+                        "cluster_count": 0,
+                        "kb_id": req_obj.kb_id,
+                        "error": "local Qwen2-VL unavailable; review candidates were not written",
+                        "vlm_refine": vlm_stats,
+                    }
+                rows_for_candidates = refined_rows
+            elif refined_rows or not vlm_stats["unavailable"]:
                 rows_for_candidates = refined_rows
             task.extra["vlm_refine"] = vlm_stats
 
@@ -2066,7 +2098,9 @@ def auto_kb_run(req: AutoKbRunRequest) -> dict[str, Any]:
 
         task.extra["candidates"] = len(candidates)
         task.extra["qdrant_rows"] = len(rows)
-        task.extra["skipped_existing"] = max(0, len(rows) - len(candidates))
+        task.extra["skipped_existing"] = skipped_existing_count
+        task.extra["skipped_invalid"] = skipped_invalid_count
+        task.extra["vlm_filtered"] = int(vlm_stats.get("rejected") or 0)
         task.extra["candidate_mode"] = req_obj.candidate_mode
         task.extra["candidate_reason_counts"] = reason_counts
         task.extra["vlm_refine"] = vlm_stats
@@ -2075,7 +2109,9 @@ def auto_kb_run(req: AutoKbRunRequest) -> dict[str, Any]:
                     "cluster_count": 0, "kb_id": req_obj.kb_id,
                     "note": "no new qdrant highlight candidates",
                     "qdrant_rows": len(rows),
-                    "skipped_existing": len(rows)}
+                    "skipped_existing": skipped_existing_count,
+                    "skipped_invalid": skipped_invalid_count,
+                    "vlm_filtered": int(vlm_stats.get("rejected") or 0)}
         if task.status == "canceled":
             return {"canceled": True, "stage": "before_cluster", "candidates": len(candidates)}
 
@@ -2099,6 +2135,8 @@ def auto_kb_run(req: AutoKbRunRequest) -> dict[str, Any]:
         out["qdrant_rows"] = len(rows)
         out["candidates"] = len(candidates)
         out["skipped_existing"] = task.extra["skipped_existing"]
+        out["skipped_invalid"] = task.extra["skipped_invalid"]
+        out["vlm_filtered"] = task.extra["vlm_filtered"]
         out["candidate_mode"] = req_obj.candidate_mode
         out["candidate_reason_counts"] = reason_counts
         out["vlm_refine"] = vlm_stats

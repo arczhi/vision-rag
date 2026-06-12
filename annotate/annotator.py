@@ -34,6 +34,32 @@ from .transcript import Transcript, TranscriptProvider
 logger = logging.getLogger(__name__)
 
 
+def _aggregate_evidence_score_breakdown(evidence_samples: list[dict]) -> dict[str, float]:
+    """Aggregate per-modality scores from matched KB evidence for UI/debug display."""
+    by_mode: dict[str, list[float]] = {}
+    for evidence in evidence_samples or []:
+        breakdown = evidence.get("score_breakdown")
+        if not isinstance(breakdown, dict):
+            continue
+        for mode, value in breakdown.items():
+            key = str(mode or "").strip()
+            if not key:
+                continue
+            try:
+                score = float(value)
+            except (TypeError, ValueError):
+                continue
+            if np.isfinite(score):
+                by_mode.setdefault(key, []).append(score)
+    return {mode: round(max(scores), 4) for mode, scores in by_mode.items() if scores}
+
+
+def _modalities_from_score_breakdown(score_breakdown: dict[str, float]) -> list[str]:
+    order = ["visual", "caption", "transcript"]
+    keys = [str(k) for k in (score_breakdown or {}).keys() if str(k).strip()]
+    return sorted(keys, key=lambda k: (order.index(k) if k in order else len(order), k))
+
+
 @dataclass
 class Annotation:
     label: str
@@ -46,12 +72,20 @@ class Annotation:
     understanding: dict | None = None                           # 本地 VLM 高光理解结果
 
     def as_dict(self) -> dict:
+        score_breakdown = self.__dict__.get("score_breakdown")
+        if not isinstance(score_breakdown, dict) or not score_breakdown:
+            score_breakdown = _aggregate_evidence_score_breakdown(self.evidence_samples)
+        modalities = self.__dict__.get("modalities")
+        if not isinstance(modalities, list) or not modalities:
+            modalities = _modalities_from_score_breakdown(score_breakdown)
         return {
             "label": self.label,
             "start_time": round(self.start_time, 3),
             "end_time": round(self.end_time, 3),
             "duration": round(self.end_time - self.start_time, 3),
             "score": round(self.score, 4),
+            "score_breakdown": score_breakdown,
+            "modalities": modalities,
             "thumbnail": self.thumbnail,
             "clip_indices": self.clip_indices,
             "evidence_samples": self.evidence_samples,
@@ -671,6 +705,9 @@ class Annotator:
         )
         # 把 z-score 也带到 evidence_samples 头部以便 UI 展示 (放 a 上扩展字段)
         a.__dict__["z_score"] = z
+        score_breakdown = _aggregate_evidence_score_breakdown(a.evidence_samples)
+        a.__dict__["score_breakdown"] = score_breakdown
+        a.__dict__["modalities"] = _modalities_from_score_breakdown(score_breakdown)
         return a
 
     @staticmethod
@@ -681,6 +718,9 @@ class Annotator:
             if key not in seen:
                 cur.evidence_samples.append(e)
                 seen.add(key)
+        score_breakdown = _aggregate_evidence_score_breakdown(cur.evidence_samples)
+        cur.__dict__["score_breakdown"] = score_breakdown
+        cur.__dict__["modalities"] = _modalities_from_score_breakdown(score_breakdown)
 
     def _assign_first_frame_thumbnails(self, meta, annotations: list[Annotation]) -> None:
         """为最终高光段保存起始帧缩略图, 供结果卡片直接展示。"""

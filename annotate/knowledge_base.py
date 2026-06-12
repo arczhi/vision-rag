@@ -198,6 +198,50 @@ class KBRetriever:
         return np.asarray(vec, dtype=np.float32).reshape(-1)
 
     @staticmethod
+    def _similarity_score(query_vec: np.ndarray, target_vec) -> float | None:
+        try:
+            q = np.asarray(query_vec, dtype=np.float32).reshape(-1)
+            v = np.asarray(target_vec, dtype=np.float32).reshape(-1)
+        except Exception:
+            return None
+        if q.size == 0 or v.size == 0 or q.shape != v.shape:
+            return None
+
+        metric = str(cfg.qdrant.metric_type or "COSINE").upper()
+        if metric in {"IP", "DOT", "INNER_PRODUCT"}:
+            score = float(np.dot(q, v))
+        elif metric == "L2":
+            score = -float(np.linalg.norm(q - v))
+        else:
+            denom = float(np.linalg.norm(q) * np.linalg.norm(v))
+            if denom <= 1e-12:
+                return None
+            score = float(np.dot(q, v) / denom)
+        return score if np.isfinite(score) else None
+
+    def _retrieve_point_vectors(self, client, point_ids: list[str], vector_names: list[str]) -> dict[str, dict]:
+        if not point_ids:
+            return {}
+        try:
+            rows = client.retrieve(
+                collection_name=self.collection_name,
+                ids=point_ids,
+                with_payload=False,
+                with_vectors=vector_names,
+                timeout=int(cfg.qdrant.timeout),
+            )
+        except Exception as e:
+            logger.debug("retrieve KB point vectors skipped: %s", e)
+            return {}
+
+        out: dict[str, dict] = {}
+        for row in rows:
+            vectors = getattr(row, "vector", None)
+            if isinstance(vectors, dict):
+                out[str(row.id)] = vectors
+        return out
+
+    @staticmethod
     def _kb_filter(kb_id: str):
         from qdrant_client import models
 
@@ -445,6 +489,18 @@ class KBRetriever:
                 and (query_transcript_mask is None or bool(query_transcript_mask[i]))
             ):
                 query_by_lane[names.transcript] = query_transcript_vecs[i]
+            # Display/debug scores should expose all named-vector lanes present in
+            # Qdrant. If the current clip has no text caption, use the visual CLIP
+            # vector as a cross-modal query for the caption lane; it is not added
+            # to active_weights unless that lane was already an active retrieval lane.
+            display_query_by_lane: dict[str, np.ndarray] = {
+                names.visual: visual_vec,
+                names.caption: query_by_lane.get(names.caption, visual_vec),
+                names.transcript: query_by_lane.get(
+                    names.transcript,
+                    query_by_lane.get(names.caption, visual_vec),
+                ),
+            }
 
             payloads: dict[str, dict] = {}
             lane_scores: dict[str, dict[str, float]] = {}
@@ -469,10 +525,32 @@ class KBRetriever:
                     payloads.setdefault(pid, dict(point.payload or {}))
                     lane_scores.setdefault(pid, {})[lane] = float(point.score)
 
+            point_vectors = self._retrieve_point_vectors(
+                client,
+                list(lane_scores.keys()),
+                list(display_query_by_lane.keys()),
+            )
+            display_lane_scores: dict[str, dict[str, float]] = {
+                pid: dict(scores) for pid, scores in lane_scores.items()
+            }
+            for pid, vectors in point_vectors.items():
+                ranking_scores = lane_scores.setdefault(pid, {})
+                display_scores = display_lane_scores.setdefault(pid, dict(ranking_scores))
+                for lane, vec in display_query_by_lane.items():
+                    if lane in display_scores:
+                        continue
+                    score = self._similarity_score(vec, vectors.get(lane))
+                    if score is None:
+                        continue
+                    display_scores[lane] = score
+                    if lane in active_weights and lane not in ranking_scores:
+                        ranking_scores[lane] = score
+
             row = []
             denom = sum(active_weights.values()) or 1.0
             for pid, scores in lane_scores.items():
                 payload = payloads.get(pid) or {}
+                display_scores = display_lane_scores.get(pid) or scores
                 combined = sum(
                     active_weights[lane] * float(scores.get(lane, 0.0))
                     for lane in active_weights
@@ -493,9 +571,9 @@ class KBRetriever:
                     "transcript_source": payload.get("transcript_source") or "",
                     "score_breakdown": {
                         aliases.get(lane, lane): round(float(score), 4)
-                        for lane, score in scores.items()
+                        for lane, score in display_scores.items()
                     },
-                    "modalities": [aliases.get(lane, lane) for lane in scores],
+                    "modalities": [aliases.get(lane, lane) for lane in display_scores],
                 })
             row.sort(key=lambda h: h.get("score", 0.0), reverse=True)
             out.append(row[:int(top_k)])

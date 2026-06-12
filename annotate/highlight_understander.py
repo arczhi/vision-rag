@@ -473,7 +473,7 @@ Qdrant 多模态上下文:
             caption = str(parsed.get("caption") or "")[:500]
             reason = str(parsed.get("reason") or "")[:500]
             cut_advice = str(parsed.get("cut_advice") or "")[:500]
-            if _has_negative_highlight_text(reason, cut_advice):
+            if _has_negative_highlight_text(caption, reason, cut_advice):
                 is_highlight = False
                 score = min(score if score is not None else 0.0, 0.35)
             elif is_highlight is True and score is not None and score < 0.5:
@@ -550,19 +550,21 @@ Qdrant 多模态上下文:
             f"{i + 1}. {self._cluster_description_snippet(d) or d[:300]}"
             for i, d in enumerate(descs[:6])
         )
-        preset_labels = "、".join(PRESET_CLUSTER_LABELS)
+        coarse_refs = "、".join(PRESET_CLUSTER_LABELS)
         prompt = f"""你是一位专业的漫剧内容分析师。现在这些图片和文字来自同一个自动聚类出来的漫剧高光簇。
 请综合视觉缩略图、剧情描述、台词和判断理由，给这一簇取一个“分类标签”。
 当前任务只是“给簇取名”，不是重新判断是否高光。
 
 标签契约:
-1. 首选下面的预设分类名，能贴合就直接使用: {preset_labels}
-2. 预设都不贴合时，才自创 4-8 个汉字；必须像“类型名/主题名”，不能像一句话或画面描述。
+1. 必须输出“细分簇标签”，下面这些只是不允许直接输出的粗粒度参考方向: {coarse_refs}
+2. 自创 4-8 个汉字；必须像“类型名/主题名”，不能像一句话或画面描述。
 3. 标签必须概括共性，不得复述具体人物、武器、动作、场景或完整剧情。
 4. 严禁输出“反转冲突”“高光时刻”“剧情高光”“悬念钩子”等无区分度标签。
 5. 严禁输出以“这段/这个/画面/镜头/场景/视频/片段/内容/展示/描述/一个/一位/一名”开头的内容。
 6. 严禁输出“这段画面展示”“画面展示”“符合高光”“高光标准”“正在发生”“发生什么”这类描述片段。
 7. 如果你想写“这段画面展示了……”，说明你正在写描述而不是标签；请改成抽象分类名。
+8. 自创标签必须表达高光类型，包含冲突、反击、反转、危机、悬念、身份反差、特殊设定、强情绪、猎奇、觉醒等语义。
+9. 不要输出普通物体、动作、场景、主题、行业或素材标签；若簇不像明确高光类型，也要提炼成细分高光标签，不要退回粗粒度参考方向。
 
 簇内样本描述:
 {listed}

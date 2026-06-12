@@ -34,9 +34,30 @@ _HIGHLIGHT_POSITIVE_TAGS = {
 }
 _HIGHLIGHT_NEGATIVE_HINTS = (
     "不是高光", "不适合作为高光", "普通画面", "普通的画面", "普通场景", "普通对话",
-    "没有明显", "没有明确", "没有提供足够", "信息不足",
+    "没有明显", "没有明确", "没有提供足够", "信息不足", "不符合高光", "不需要高光",
+    "不适合作为悬念", "不适合作为钩子", "不适合作为高光时刻",
 )
 _ORDINARY_TAG_HINTS = ("普通", "无")
+
+
+def _contains_any(text: str, hints: Iterable[str]) -> bool:
+    value = str(text or "")
+    return any(h in value for h in hints)
+
+
+def _has_ordinary_tag(tags) -> bool:
+    if not isinstance(tags, list):
+        return False
+    return any(_contains_any(str(tag), _ORDINARY_TAG_HINTS) for tag in tags)
+
+
+def _clean_highlight_tags(tags) -> list[str]:
+    if not isinstance(tags, list):
+        return []
+    return [
+        str(t) for t in tags
+        if str(t) and not _contains_any(str(t), _ORDINARY_TAG_HINTS)
+    ]
 
 
 def _slug(value: str, max_len: int = 96) -> str:
@@ -479,11 +500,13 @@ class QdrantRetriever:
         """从主 Qdrant clip collection 直接读取可归纳为高光 KB 的候选片段.
 
         strict: 只收 qwen_is_highlight=true 或 qwen_score > min_score.
-        balanced/broad: strict + 正向标签; 数量不足时加入 qwen_score>=broad_min_score 的多样性兜底。
+        balanced/broad: strict + 正向标签; 数量不足时加入 qwen_score>=broad_min_score 的干净兜底。
+        review: 额外返回低置信候选给本地 VLM 精判; review_pending 不能直接入库。
         """
         self.ensure_collection()
         client = self.connect()
         mode = str(candidate_mode or "strict").lower()
+        review_mode = mode in {"review", "vlm_review", "refine"}
         strict_rows: list[dict] = []
         positive_rows: list[dict] = []
         fallback_rows: list[dict] = []
@@ -513,23 +536,9 @@ class QdrantRetriever:
                 except Exception:
                     score_f = None
                 tags = payload.get("qwen_tags")
-                if isinstance(tags, list):
-                    clean_tags = [
-                        str(t) for t in tags
-                        if str(t) and not any(h in str(t) for h in _ORDINARY_TAG_HINTS)
-                    ]
-                else:
-                    clean_tags = []
+                clean_tags = _clean_highlight_tags(tags)
                 tag_text = " ".join(clean_tags)
                 has_positive_tag = any(t in tag_text for t in _HIGHLIGHT_POSITIVE_TAGS)
-                is_strict = payload.get("qwen_is_highlight") is True or (
-                    score_f is not None and score_f > float(min_score)
-                )
-                is_fallback = score_f is not None and score_f >= float(broad_min_score)
-                if mode == "strict" and not is_strict:
-                    continue
-                if mode != "strict" and not (is_strict or has_positive_tag or is_fallback):
-                    continue
                 vecs = row.vector or {}
                 vec = vecs.get(self.vector_names.visual) if isinstance(vecs, dict) else vecs
                 if vec is None:
@@ -539,7 +548,45 @@ class QdrantRetriever:
                 )
                 reason = self._clean_candidate_text(str(payload.get("qwen_reason") or ""))
                 cut_advice = str(payload.get("qwen_cut_advice") or "").strip()
-                negative_reason = any(h in reason or h in cut_advice for h in _HIGHLIGHT_NEGATIVE_HINTS)
+                negative_text = "\n".join([
+                    caption,
+                    reason,
+                    cut_advice,
+                    str(payload.get("caption_text") or ""),
+                ])
+                negative_reason = _contains_any(negative_text, _HIGHLIGHT_NEGATIVE_HINTS)
+                ordinary_tag = _has_ordinary_tag(tags)
+                explicit_highlight = payload.get("qwen_is_highlight") is True
+                explicit_reject = payload.get("qwen_is_highlight") is False
+                is_strict = (
+                    explicit_highlight
+                    or (
+                        not explicit_reject
+                        and not negative_reason
+                        and not ordinary_tag
+                        and score_f is not None
+                        and score_f > float(min_score)
+                    )
+                )
+                is_review_pending = (
+                    review_mode
+                    and score_f is not None
+                    and score_f >= float(broad_min_score)
+                    and not explicit_highlight
+                    and not has_positive_tag
+                )
+                is_fallback = (
+                    score_f is not None
+                    and score_f >= float(broad_min_score)
+                    and not negative_reason
+                    and not ordinary_tag
+                )
+                if (negative_reason or ordinary_tag) and not is_review_pending:
+                    continue
+                if mode == "strict" and not is_strict:
+                    continue
+                if mode != "strict" and not (is_strict or has_positive_tag or is_fallback or is_review_pending):
+                    continue
                 parts = [
                     caption,
                     tag_text.strip(),
@@ -558,6 +605,10 @@ class QdrantRetriever:
                     payload["candidate_reason"] = "positive_tag"
                     payload["_candidate_rank"] = 2.0 + float(score_f or 0.0)
                     positive_rows.append(payload)
+                elif is_review_pending:
+                    payload["candidate_reason"] = "review_pending"
+                    payload["_candidate_rank"] = 0.5 + float(score_f or 0.0)
+                    fallback_rows.append(payload)
                 else:
                     payload["candidate_reason"] = "uncertain_score"
                     payload["_candidate_rank"] = 1.0 + float(score_f or 0.0)
