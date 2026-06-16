@@ -1,0 +1,824 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vision RAG 生产化改造蓝图</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7fb;
+      --paper: #ffffff;
+      --ink: #17202a;
+      --muted: #667085;
+      --line: #d9dee8;
+      --soft: #eef2f7;
+      --brand: #1f7a5b;
+      --brand-2: #2f6fed;
+      --warn: #b45f06;
+      --bad: #b42318;
+      --good: #027a48;
+      --violet: #7a3db8;
+      --shadow: 0 10px 28px rgba(23, 32, 42, .08);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.55;
+    }
+    header {
+      background: var(--paper);
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+    .shell {
+      width: min(1180px, calc(100vw - 40px));
+      margin: 0 auto;
+    }
+    .top {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 24px;
+      align-items: center;
+      padding: 18px 0;
+    }
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+    .subtitle {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .header-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    button {
+      border: 1px solid var(--line);
+      background: var(--paper);
+      color: var(--ink);
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    button:hover { border-color: #aeb7c7; }
+    button.primary {
+      background: var(--brand);
+      color: #fff;
+      border-color: var(--brand);
+    }
+    nav {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 0 0 12px;
+    }
+    nav button {
+      white-space: nowrap;
+      padding: 8px 10px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    nav button.active {
+      color: #fff;
+      background: var(--brand-2);
+      border-color: var(--brand-2);
+    }
+    main { padding: 26px 0 56px; }
+    section.view { display: none; }
+    section.view.active { display: block; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 16px;
+    }
+    .card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+    .span-3 { grid-column: span 3; }
+    .span-4 { grid-column: span 4; }
+    .span-5 { grid-column: span 5; }
+    .span-6 { grid-column: span 6; }
+    .span-7 { grid-column: span 7; }
+    .span-8 { grid-column: span 8; }
+    .span-12 { grid-column: span 12; }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 20px;
+      letter-spacing: 0;
+    }
+    h3 {
+      margin: 0 0 10px;
+      font-size: 15px;
+      letter-spacing: 0;
+    }
+    p { margin: 0 0 12px; }
+    .muted { color: var(--muted); }
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 3px 8px;
+      background: var(--soft);
+      font-size: 12px;
+      color: #344054;
+      white-space: nowrap;
+    }
+    .tag.good { color: var(--good); background: #ecfdf3; border-color: #abefc6; }
+    .tag.warn { color: var(--warn); background: #fff7ed; border-color: #fed7aa; }
+    .tag.bad { color: var(--bad); background: #fef3f2; border-color: #fecdca; }
+    .metric {
+      display: grid;
+      gap: 4px;
+      min-height: 92px;
+    }
+    .metric strong {
+      font-size: 28px;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .metric span { color: var(--muted); font-size: 13px; }
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+      align-items: stretch;
+    }
+    .node {
+      border: 1px solid var(--line);
+      background: #fbfcfe;
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 106px;
+      position: relative;
+    }
+    .node::after {
+      content: "→";
+      position: absolute;
+      right: -12px;
+      top: 42%;
+      color: var(--muted);
+      font-weight: 800;
+    }
+    .node:last-child::after { content: ""; }
+    .node b { display: block; margin-bottom: 6px; }
+    .node small { color: var(--muted); display: block; }
+    .node.api { border-top: 4px solid var(--brand-2); }
+    .node.queue { border-top: 4px solid var(--warn); }
+    .node.gpu { border-top: 4px solid var(--violet); }
+    .node.store { border-top: 4px solid var(--brand); }
+    .node.review { border-top: 4px solid #d92d20; }
+    .timeline {
+      display: grid;
+      gap: 10px;
+    }
+    .slot {
+      display: grid;
+      grid-template-columns: 110px 1fr auto;
+      gap: 12px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #fbfcfe;
+    }
+    .slot time {
+      font-weight: 800;
+      color: var(--brand-2);
+      font-variant-numeric: tabular-nums;
+    }
+    .slot .bar {
+      height: 9px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--brand) 0%, var(--brand) var(--w), #e7ebf2 var(--w), #e7ebf2 100%);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 8px;
+      vertical-align: top;
+      text-align: left;
+    }
+    th {
+      color: #344054;
+      background: #f8fafc;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .02em;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      background: #f2f4f7;
+      border: 1px solid #e4e7ec;
+      border-radius: 6px;
+      padding: 1px 5px;
+      font-size: .92em;
+    }
+    pre {
+      margin: 0;
+      padding: 14px;
+      overflow: auto;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #101828;
+      color: #f9fafb;
+      font-size: 12.5px;
+      line-height: 1.45;
+    }
+    .phase {
+      border-left: 4px solid var(--brand);
+      padding: 10px 12px;
+      background: #fbfcfe;
+      border-radius: 0 8px 8px 0;
+      border-top: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 10px;
+    }
+    .phase strong { display: block; margin-bottom: 4px; }
+    .checklist {
+      display: grid;
+      gap: 8px;
+    }
+    .check {
+      display: grid;
+      grid-template-columns: 22px 1fr;
+      gap: 8px;
+      align-items: start;
+      padding: 8px 10px;
+      background: #fbfcfe;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .box {
+      width: 16px;
+      height: 16px;
+      margin-top: 3px;
+      border-radius: 4px;
+      border: 2px solid var(--brand);
+      background: #ecfdf3;
+    }
+    .accordion {
+      display: grid;
+      gap: 8px;
+    }
+    details {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+      padding: 10px 12px;
+    }
+    summary {
+      cursor: pointer;
+      font-weight: 750;
+    }
+    details p { margin-top: 8px; }
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .callout {
+      border: 1px solid #fed7aa;
+      background: #fff7ed;
+      color: #7a3b00;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .goodbox {
+      border: 1px solid #abefc6;
+      background: #ecfdf3;
+      color: #054f31;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .toggle-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 10px 0 14px;
+    }
+    .toggle-group button.active {
+      color: #fff;
+      background: var(--brand);
+      border-color: var(--brand);
+    }
+    .scenario { display: none; }
+    .scenario.active { display: block; }
+    footer {
+      padding: 20px 0;
+      color: var(--muted);
+      font-size: 12px;
+      border-top: 1px solid var(--line);
+      background: var(--paper);
+    }
+    @media (max-width: 920px) {
+      .top, .split { grid-template-columns: 1fr; }
+      .grid { grid-template-columns: 1fr; }
+      .span-3, .span-4, .span-5, .span-6, .span-7, .span-8, .span-12 { grid-column: auto; }
+      .flow { grid-template-columns: 1fr; }
+      .node::after { content: "↓"; right: 12px; top: auto; bottom: -18px; }
+      .slot { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="shell">
+      <div class="top">
+        <div>
+          <h1>Vision RAG 生产化改造蓝图</h1>
+          <div class="subtitle">目标：可靠的视频高光标注与视频入知识库能力，面向 Ubuntu + NVIDIA GPU 的夜间顺序批处理。</div>
+        </div>
+        <div class="header-actions">
+          <button id="printBtn">打印 / 导出 PDF</button>
+          <button class="primary" data-jump="roadmap">查看路线图</button>
+        </div>
+      </div>
+      <nav id="tabs" aria-label="页面导航">
+        <button class="active" data-view="overview">总览</button>
+        <button data-view="runtime">运行架构</button>
+        <button data-view="workflow">批处理工作流</button>
+        <button data-view="data">数据与状态</button>
+        <button data-view="ops">部署与可观测</button>
+        <button data-view="roadmap">改造路线</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="view active" id="overview">
+      <div class="grid">
+        <div class="card span-8">
+          <h2>改造原则</h2>
+          <p>当前实现已经具备视频入库、Qdrant named vectors、知识库检索和高光标注能力。生产化的关键是把“长耗时模型调用”从 API 线程和内存任务里抽出来，变成可恢复、可追踪、可限流的 durable workflow。</p>
+          <div class="flow" aria-label="目标执行链路">
+            <div class="node api"><b>API</b><small>只接收请求、校验参数、创建 durable job。</small></div>
+            <div class="node queue"><b>Scheduler</b><small>每天固定时间生成 batch run，按优先级派发。</small></div>
+            <div class="node gpu"><b>GPU Worker</b><small>单卡串行或低并发执行 ASR、VLM、embedding。</small></div>
+            <div class="node store"><b>Stores</b><small>Postgres 保存状态；Qdrant 保存向量；对象存储保存视频和截图。</small></div>
+            <div class="node review"><b>Review UI</b><small>查看结果、修正、接受/拒绝、回写反馈。</small></div>
+          </div>
+        </div>
+        <div class="card span-4">
+          <h2>第一优先级</h2>
+          <div class="checklist">
+            <div class="check"><span class="box"></span><span>把 `TaskManager` 从 in-memory 替换为持久化 job 表。</span></div>
+            <div class="check"><span class="box"></span><span>API 与 GPU worker 分进程部署，API 不加载大模型。</span></div>
+            <div class="check"><span class="box"></span><span>每个视频一个可重试 workflow，步骤输出可审计。</span></div>
+            <div class="check"><span class="box"></span><span>夜间调度只生产队列，不在 request path 上做重活。</span></div>
+          </div>
+        </div>
+        <div class="card span-3 metric">
+          <strong>1</strong>
+          <span>GPU worker 并发默认值。单卡先串行，稳定后再试探并发。</span>
+          <div class="tag-row"><span class="tag good">避免显存抖动</span></div>
+        </div>
+        <div class="card span-3 metric">
+          <strong>5-10m</strong>
+          <span>单条视频长度。适合按 clip 粒度 checkpoint，失败后从步骤继续。</span>
+          <div class="tag-row"><span class="tag">clip / segment checkpoint</span></div>
+        </div>
+        <div class="card span-3 metric">
+          <strong>22:00</strong>
+          <span>推荐夜间批处理窗口起点。下一次运行时间必须持久化展示。</span>
+          <div class="tag-row"><span class="tag warn">调度是产品行为</span></div>
+        </div>
+        <div class="card span-3 metric">
+          <strong>3</strong>
+          <span>核心状态源：Postgres、Qdrant、对象存储。不要再把任务结果只放内存。</span>
+          <div class="tag-row"><span class="tag bad">内存任务不可恢复</span></div>
+        </div>
+        <div class="card span-12">
+          <h2>建议的能力边界</h2>
+          <table>
+            <thead><tr><th>层</th><th>职责</th><th>当前问题</th><th>改造方向</th></tr></thead>
+            <tbody>
+              <tr><td>API</td><td>校验、创建任务、查询状态、人工反馈</td><td>会提交进程内线程任务，重启后任务丢失</td><td>写入 Postgres job，再由 scheduler/worker 消费</td></tr>
+              <tr><td>Workflow Service</td><td>编排 ingest / annotate / auto-kb 的步骤</td><td>业务编排分散在 `api/server.py` 闭包里</td><td>提取 `services/workflows.py`，每步显式状态和输入输出</td></tr>
+              <tr><td>GPU Worker</td><td>执行模型、视频解码、Qdrant 写入</td><td>模型生命周期与 API 绑定</td><td>独立进程，预加载模型，使用 GPU semaphore</td></tr>
+              <tr><td>Repository</td><td>Postgres job/run/artifact/feedback 表</td><td>SQLite 仅保存反馈和部分 LLM 段</td><td>引入 Postgres durable task schema</td></tr>
+              <tr><td>Observability</td><td>trace、日志、指标、诊断页面</td><td>日志和任务状态不足以定位卡在哪个模型/视频/clip</td><td>结构化日志 + Prometheus + run detail 页面</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="runtime">
+      <div class="grid">
+        <div class="card span-12">
+          <h2>生产运行拓扑</h2>
+          <pre>Ubuntu NVIDIA Host
+├─ nginx / caddy
+│  └─ FastAPI web-api               # 无 GPU 重模型，只负责请求和状态查询
+├─ postgres                         # durable jobs, workflow steps, results, feedback
+├─ redis                            # 可选：队列与 worker 心跳；Postgres SKIP LOCKED 也可替代
+├─ qdrant                           # highlight_clips / highlight_example_v1 named vectors
+├─ minio or filesystem object store # 原视频、缩略图、帧样本、ASR/VLM artifacts
+└─ gpu-worker:0                     # CUDA_VISIBLE_DEVICES=0，顺序执行 GPU 步骤</pre>
+        </div>
+        <div class="card span-6">
+          <h2>为什么不用 API 进程跑批量任务</h2>
+          <div class="accordion">
+            <details open>
+              <summary>重启会丢任务</summary>
+              <p>当前 `api/tasks.py` 明确是 in-memory 单进程任务管理。生产中 API 重启、发布、崩溃都会让 `running` 任务和结果不可恢复。</p>
+            </details>
+            <details>
+              <summary>显存资源需要全局排队</summary>
+              <p>5-10 分钟视频会触发解码、ASR、embedding、VLM 多段推理。需要跨请求、跨批次的 GPU 锁和显存预算，而不是每个请求自己抢。</p>
+            </details>
+            <details>
+              <summary>调度可见性不足</summary>
+              <p>运营需要知道今晚跑哪些、下次什么时候跑、哪条卡住、失败能否重试。进程健康不等于工作流健康。</p>
+            </details>
+          </div>
+        </div>
+        <div class="card span-6">
+          <h2>建议服务拆分</h2>
+          <table>
+            <thead><tr><th>服务</th><th>副本</th><th>是否用 GPU</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td>web-api</td><td>1-2</td><td>否</td><td>上传、创建 job、查询结果、人工审核。</td></tr>
+              <tr><td>scheduler</td><td>1</td><td>否</td><td>按 wall-clock 创建 nightly batch run，持久化 next_run_at。</td></tr>
+              <tr><td>gpu-worker</td><td>每卡 1 个</td><td>是</td><td>加载模型并执行步骤。单卡先 `concurrency=1`。</td></tr>
+              <tr><td>review-ui</td><td>静态</td><td>否</td><td>可沿用 `web/index.html`，新增 batch/run 页面。</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card span-12">
+          <h2>GPU Worker 内部执行链</h2>
+          <div class="flow">
+            <div class="node api"><b>claim step</b><small>`SELECT ... FOR UPDATE SKIP LOCKED` 或队列 pop。</small></div>
+            <div class="node queue"><b>prepare</b><small>下载/校验视频、探测时长、生成 trace_id。</small></div>
+            <div class="node gpu"><b>model work</b><small>ASR、CLIP embedding、Qwen2-VL segment / rerank。</small></div>
+            <div class="node store"><b>persist</b><small>写 artifact、Qdrant point、step result。</small></div>
+            <div class="node review"><b>advance</b><small>下一步入队；失败写 machine-readable error。</small></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="workflow">
+      <div class="grid">
+        <div class="card span-5">
+          <h2>夜间批处理节奏</h2>
+          <p class="muted">假设每天 22:00 开始，单卡顺序执行。调度器只负责生成 batch run，worker 根据资源顺序消费。</p>
+          <div class="timeline">
+            <div class="slot"><time>21:55</time><span>冻结待处理队列，计算今晚 capacity。</span><div class="bar" style="--w: 12%"></div></div>
+            <div class="slot"><time>22:00</time><span>创建 `batch_run` 和每条视频的 `workflow_run`。</span><div class="bar" style="--w: 24%"></div></div>
+            <div class="slot"><time>22:05</time><span>GPU worker 预加载模型并开始第一条视频。</span><div class="bar" style="--w: 38%"></div></div>
+            <div class="slot"><time>整晚</time><span>按视频顺序执行；失败视频进入 retry 或 failed，不阻塞后续。</span><div class="bar" style="--w: 70%"></div></div>
+            <div class="slot"><time>07:30</time><span>停止领取新任务；已运行步骤可完成或软暂停。</span><div class="bar" style="--w: 86%"></div></div>
+            <div class="slot"><time>08:00</time><span>生成日报：成功、失败、待复核、GPU 时长、错误 TopN。</span><div class="bar" style="--w: 100%"></div></div>
+          </div>
+        </div>
+        <div class="card span-7">
+          <h2>单条视频工作流</h2>
+          <div class="flow">
+            <div class="node api"><b>ingest.prepare</b><small>校验文件、探测时长、生成 video_id、去重。</small></div>
+            <div class="node queue"><b>clip.index</b><small>切片、抽帧、缩略图、ASR、caption embedding。</small></div>
+            <div class="node gpu"><b>highlight.recall</b><small>用 visual/caption/transcript 查 KB，聚合候选。</small></div>
+            <div class="node gpu"><b>highlight.judge</b><small>Qwen2-VL 只判断候选，不全量扫所有 clip。</small></div>
+            <div class="node review"><b>review.ready</b><small>结果入库，等待人工接受/拒绝或自动发布。</small></div>
+          </div>
+          <div class="callout" style="margin-top: 14px;">
+            <b>显卡受限策略：</b>embedding 和 VLM 阶段共享同一 GPU semaphore；优先跑候选少、时长短的视频；每步记录显存峰值和耗时。先把 `concurrency=1` 做稳，再考虑 ASR CPU 并行、GPU 推理串行。
+          </div>
+        </div>
+        <div class="card span-12">
+          <h2>步骤契约</h2>
+          <table>
+            <thead><tr><th>步骤</th><th>输入</th><th>输出</th><th>幂等键</th><th>失败处理</th></tr></thead>
+            <tbody>
+              <tr><td>video.prepare</td><td>file_uri, project_id</td><td>video_id, duration, checksum</td><td>sha256(file)</td><td>文件损坏标记 `invalid_media`，不重试</td></tr>
+              <tr><td>clip.index</td><td>video_id, slicing_config, model_version</td><td>clip rows, thumbnails, Qdrant points</td><td>video_id + model_version</td><td>可重试；写入前按 point_id upsert</td></tr>
+              <tr><td>kb.ensure</td><td>kb_id, source rules</td><td>KB stats, sample ids</td><td>kb_id + kb_version</td><td>部分样例失败不影响主视频，但要报告</td></tr>
+              <tr><td>highlight.recall</td><td>clip vectors, kb_id, weights</td><td>candidate segments + score_breakdown</td><td>video_id + kb_version + scorer_version</td><td>无候选是 `succeeded_empty`，不是 failed</td></tr>
+              <tr><td>highlight.judge</td><td>candidate frames, transcript, evidence</td><td>accepted/rejected/uncertain</td><td>candidate_id + vlm_model_version</td><td>模型超时可重试；超限后进入 `needs_review`</td></tr>
+              <tr><td>publish.result</td><td>annotation set</td><td>review UI 可见结果</td><td>workflow_run_id</td><td>事务提交；失败不重复生成语义结果</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="data">
+      <div class="grid">
+        <div class="card span-6">
+          <h2>核心表设计</h2>
+          <pre>batch_runs(
+  id, schedule_name, window_start, window_end,
+  status, planned_count, succeeded_count, failed_count,
+  next_run_at, created_at, started_at, finished_at
+)
+
+workflow_runs(
+  id, batch_run_id, video_id, workflow_type,
+  status, priority, current_step, progress,
+  attempts, locked_by, locked_at,
+  input_json, result_json, error_code, error_detail,
+  created_at, started_at, finished_at
+)
+
+workflow_steps(
+  id, run_id, step_name, status, attempt,
+  input_json, output_json, artifact_refs,
+  started_at, finished_at, latency_ms,
+  error_code, error_detail
+)</pre>
+        </div>
+        <div class="card span-6">
+          <h2>业务实体</h2>
+          <pre>videos(
+  id, project_id, source_uri, checksum, duration,
+  status, metadata_json, created_at
+)
+
+video_clips(
+  id, video_id, clip_index, start_time, end_time,
+  thumbnail_uri, transcript_text, caption_text,
+  qdrant_point_id, model_version
+)
+
+highlight_annotations(
+  id, run_id, video_id, kb_id, label,
+  start_time, end_time, score,
+  score_breakdown_json, evidence_json,
+  decision_status, review_status
+)
+
+human_feedback(
+  id, annotation_id, accepted, corrected_start,
+  corrected_end, final_label, reason, reviewer_id
+)</pre>
+        </div>
+        <div class="card span-12">
+          <h2>状态机</h2>
+          <table>
+            <thead><tr><th>状态</th><th>含义</th><th>可转移到</th><th>可见性要求</th></tr></thead>
+            <tbody>
+              <tr><td><code>queued</code></td><td>已排队，未被 worker 领取</td><td>running, canceled</td><td>显示排队位置、预计开始时间</td></tr>
+              <tr><td><code>running</code></td><td>worker 已锁定并执行</td><td>succeeded, failed, retry_wait, paused</td><td>显示 worker_id、locked_at、current_step</td></tr>
+              <tr><td><code>retry_wait</code></td><td>失败后等待重试</td><td>queued, failed</td><td>显示 attempts、next_retry_at、error_code</td></tr>
+              <tr><td><code>succeeded_empty</code></td><td>流程成功但无高光</td><td>needs_review, archived</td><td>不要误判为失败，保留阈值和召回统计</td></tr>
+              <tr><td><code>needs_review</code></td><td>结果需要人工确认</td><td>approved, rejected, rerun_requested</td><td>展示 evidence、score_breakdown、模型版本</td></tr>
+              <tr><td><code>failed</code></td><td>不可恢复或超过重试</td><td>queued, archived</td><td>机器错误码 + 用户可读说明 + trace_id</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card span-12">
+          <h2>结果可复现字段</h2>
+          <div class="tag-row">
+            <span class="tag">video_checksum</span>
+            <span class="tag">clip_config_hash</span>
+            <span class="tag">embedding_model_version</span>
+            <span class="tag">vlm_model_version</span>
+            <span class="tag">kb_version</span>
+            <span class="tag">scoring_config</span>
+            <span class="tag">prompt_version</span>
+            <span class="tag">trace_id</span>
+          </div>
+          <p class="muted" style="margin-top: 12px;">AI 判断不是纯确定性行为，必须保存输入事实、模型版本、prompt 版本、输出 JSON、人工反馈，才能解释“为什么这段被选中”。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="ops">
+      <div class="grid">
+        <div class="card span-6">
+          <h2>Ubuntu + NVIDIA 部署建议</h2>
+          <pre>services:
+  web-api:
+    image: vision-rag-api
+    environment:
+      ROLE: api
+      DATABASE_URL: postgresql://...
+      QDRANT_HOST: qdrant
+
+  scheduler:
+    image: vision-rag-api
+    command: python -m workers.scheduler
+    environment:
+      NIGHTLY_SCHEDULE: "0 22 * * *"
+
+  gpu-worker:
+    image: vision-rag-api
+    command: python -m workers.gpu_worker
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      CUDA_VISIBLE_DEVICES: "0"
+      GPU_WORKER_CONCURRENCY: "1"</pre>
+        </div>
+        <div class="card span-6">
+          <h2>健康检查分层</h2>
+          <table>
+            <thead><tr><th>检查</th><th>回答的问题</th><th>失败例子</th></tr></thead>
+            <tbody>
+              <tr><td><code>/health/live</code></td><td>进程是否活着</td><td>事件循环挂死、进程退出</td></tr>
+              <tr><td><code>/health/ready</code></td><td>依赖是否可用</td><td>Postgres/Qdrant 不通</td></tr>
+              <tr><td><code>/ops/workflows</code></td><td>工作流是否推进</td><td>queue depth 增长、running 超时</td></tr>
+              <tr><td><code>/ops/gpu</code></td><td>GPU worker 是否正常</td><td>显存不足、模型未加载、心跳丢失</td></tr>
+            </tbody>
+          </table>
+          <div class="callout" style="margin-top: 14px;">不要用容器健康替代工作流健康。生产事故通常是“服务活着但队列不动”。</div>
+        </div>
+        <div class="card span-7">
+          <h2>关键指标</h2>
+          <table>
+            <thead><tr><th>指标</th><th>用途</th><th>告警建议</th></tr></thead>
+            <tbody>
+              <tr><td>workflow_queue_depth</td><td>待处理视频数量</td><td>超过 nightly capacity 的 1.5 倍</td></tr>
+              <tr><td>workflow_running_stale_total</td><td>疑似卡死任务数</td><td>running 超过步骤 p95 * 3</td></tr>
+              <tr><td>gpu_worker_heartbeat_age</td><td>worker 存活与推进</td><td>超过 60 秒</td></tr>
+              <tr><td>step_duration_seconds</td><td>定位瓶颈步骤</td><td>分步骤 p95 趋势上升</td></tr>
+              <tr><td>vlm_error_total{code}</td><td>模型失败分类</td><td>CUDA OOM / timeout 连续出现</td></tr>
+              <tr><td>annotation_empty_rate</td><td>高光召回质量</td><td>某 KB 或模型版本空结果突增</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card span-5">
+          <h2>结构化日志样例</h2>
+          <pre>{
+  "ts": "2026-06-16T22:18:03+08:00",
+  "level": "info",
+  "trace_id": "tr_8f31",
+  "run_id": "wr_20260616_0042",
+  "video_id": "v_9ac2",
+  "step": "highlight.judge",
+  "model": "Qwen2.5-VL-7B-Instruct",
+  "gpu": "0",
+  "latency_ms": 18342,
+  "candidate_count": 18,
+  "accepted_count": 6,
+  "status": "succeeded"
+}</pre>
+        </div>
+        <div class="card span-12">
+          <h2>本地/CI 验证门禁</h2>
+          <div class="split">
+            <div>
+              <h3>轻量门禁</h3>
+              <div class="checklist">
+                <div class="check"><span class="box"></span><span>Repository 单测：状态转移、重复领取、stale running 修复。</span></div>
+                <div class="check"><span class="box"></span><span>Workflow 单测：步骤失败、重试、幂等 upsert。</span></div>
+                <div class="check"><span class="box"></span><span>API contract：创建 batch、查询 run、取消任务。</span></div>
+              </div>
+            </div>
+            <div>
+              <h3>烟测门禁</h3>
+              <div class="checklist">
+                <div class="check"><span class="box"></span><span>docker compose 启动 Postgres/Qdrant/API/worker。</span></div>
+                <div class="check"><span class="box"></span><span>用 30 秒样例视频跑完整 workflow。</span></div>
+                <div class="check"><span class="box"></span><span>验证 Qdrant point、annotation、feedback 可查询。</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="roadmap">
+      <div class="grid">
+        <div class="card span-12">
+          <h2>分阶段改造路线</h2>
+          <div class="toggle-group" id="scenarioToggles">
+            <button class="active" data-scenario="p0">P0：可恢复任务</button>
+            <button data-scenario="p1">P1：夜间批处理</button>
+            <button data-scenario="p2">P2：质量闭环</button>
+            <button data-scenario="p3">P3：多卡扩展</button>
+          </div>
+          <div class="scenario active" id="p0">
+            <div class="phase"><strong>第 1 周：把任务状态落库</strong>新增 Postgres、`workflow_runs`、`workflow_steps`，保留现有 API 但不再只依赖内存任务。先让 `/annotate` 和 `/ingest` 写 durable run。</div>
+            <div class="phase"><strong>第 2 周：抽出 workflow service</strong>把 `api/server.py` 中的闭包任务迁移到 `services/ingest_workflow.py`、`services/annotation_workflow.py`，API 只创建 run。</div>
+            <div class="phase"><strong>验收标准</strong>重启 API 后，任务仍可在 UI 查询；失败有 `error_code`、`error_detail`、`current_step`；重复提交同一视频不会生成重复 active run。</div>
+          </div>
+          <div class="scenario" id="p1">
+            <div class="phase"><strong>第 3 周：scheduler + worker</strong>实现 `workers.scheduler` 和 `workers.gpu_worker`，每天 22:00 创建 batch，worker 用 `SKIP LOCKED` 顺序领取。</div>
+            <div class="phase"><strong>第 4 周：GPU 资源治理</strong>配置 `GPU_WORKER_CONCURRENCY=1`、步骤超时、stale lock 回收、失败重试退避、最大夜间窗口。</div>
+            <div class="phase"><strong>验收标准</strong>一批 10 条 5-10 分钟视频可以无人值守跑完；中途 kill worker，重启后从未完成步骤继续。</div>
+          </div>
+          <div class="scenario" id="p2">
+            <div class="phase"><strong>第 5 周：标注质量仪表盘</strong>新增空结果率、人工接受率、label 分布、score_breakdown 分布、模型版本对比。</div>
+            <div class="phase"><strong>第 6 周：评测集</strong>沉淀 50-100 条人工确认视频，形成 nightly 或 weekly eval，防止阈值/模型/KB 改动退化。</div>
+            <div class="phase"><strong>验收标准</strong>每次调阈值、模型、KB 后都能看到召回率、接受率、平均片段时长和误报样例。</div>
+          </div>
+          <div class="scenario" id="p3">
+            <div class="phase"><strong>多卡拆分</strong>每张卡一个 worker 进程；按 project/kb/video 优先级分配；不同模型可绑定不同 GPU。</div>
+            <div class="phase"><strong>吞吐优化</strong>ASR 可 CPU 并行，embedding 批量化，VLM 只对 recall 后候选执行；对象存储与 Qdrant 写入异步批处理。</div>
+            <div class="phase"><strong>验收标准</strong>增加 GPU 后 throughput 近似线性增长，且单视频结果与单卡串行模式一致。</div>
+          </div>
+        </div>
+        <div class="card span-6">
+          <h2>建议新增模块</h2>
+          <pre>vision-rag/
+├── services/
+│   ├── workflows.py
+│   ├── ingest_workflow.py
+│   └── annotation_workflow.py
+├── repositories/
+│   ├── workflow_repo.py
+│   ├── video_repo.py
+│   └── annotation_repo.py
+├── workers/
+│   ├── scheduler.py
+│   ├── gpu_worker.py
+│   └── stale_run_reaper.py
+├── observability/
+│   ├── logging.py
+│   └── metrics.py
+└── migrations/</pre>
+        </div>
+        <div class="card span-6">
+          <h2>不建议先做的事</h2>
+          <div class="checklist">
+            <div class="check"><span class="box"></span><span>不要先换更大的 VLM。当前瓶颈是任务可靠性和可观测性，不是单点模型能力。</span></div>
+            <div class="check"><span class="box"></span><span>不要把 cron 直接 curl `/annotate`。这仍然会把长任务绑在 API 生命周期上。</span></div>
+            <div class="check"><span class="box"></span><span>不要用“进程健康”当作“今晚批次成功”。必须查 durable run 和步骤状态。</span></div>
+            <div class="check"><span class="box"></span><span>不要让失败静默 fallback。fallback 也要写入状态和错误码。</span></div>
+          </div>
+        </div>
+        <div class="card span-12">
+          <h2>第一版实施清单</h2>
+          <table>
+            <thead><tr><th>任务</th><th>代码位置</th><th>验证</th></tr></thead>
+            <tbody>
+              <tr><td>新增 Postgres 和 migration</td><td><code>docker-compose.yml</code>, <code>migrations/</code></td><td>启动后能创建 workflow 表，健康检查区分 DB ready</td></tr>
+              <tr><td>替换内存任务查询</td><td><code>api/tasks.py</code> → <code>repositories/workflow_repo.py</code></td><td>API 重启后 run 仍可查询</td></tr>
+              <tr><td>拆出 annotation workflow</td><td><code>api/server.py</code>, <code>annotate/annotator.py</code></td><td>老 `/annotate` contract 不变，但 run 状态落库</td></tr>
+              <tr><td>实现 nightly scheduler</td><td><code>workers/scheduler.py</code></td><td>持久化 next_run_at；重复启动不会创建重复 batch</td></tr>
+              <tr><td>实现 GPU worker</td><td><code>workers/gpu_worker.py</code></td><td>kill -9 后 stale lock 可恢复，步骤幂等</td></tr>
+              <tr><td>新增 ops 页面/API</td><td><code>api/server.py</code>, <code>web/</code></td><td>能看 queue depth、running、failed、下次调度</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell">基于 reliable-code-systems 原则：可追踪执行路径、durable state、可恢复批处理、明确验证门禁。</div>
+  </footer>
+
+  <script>
+    const views = [...document.querySelectorAll(".view")];
+    const tabButtons = [...document.querySelectorAll("#tabs button")];
+    function showView(id) {
+      views.forEach(v => v.classList.toggle("active", v.id === id));
+      tabButtons.forEach(b => b.classList.toggle("active", b.dataset.view === id));
+      history.replaceState(null, "", "#" + id);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+    tabButtons.forEach(btn => btn.addEventListener("click", () => showView(btn.dataset.view)));
+    document.querySelectorAll("[data-jump]").forEach(btn => {
+      btn.addEventListener("click", () => showView(btn.dataset.jump));
+    });
+    document.getElementById("printBtn").addEventListener("click", () => window.print());
+
+    const scenarioButtons = [...document.querySelectorAll("#scenarioToggles button")];
+    const scenarios = [...document.querySelectorAll(".scenario")];
+    scenarioButtons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = btn.dataset.scenario;
+        scenarioButtons.forEach(b => b.classList.toggle("active", b === btn));
+        scenarios.forEach(s => s.classList.toggle("active", s.id === id));
+      });
+    });
+
+    const initial = location.hash.replace("#", "");
+    if (initial && document.getElementById(initial)) showView(initial);
+  </script>
+</body>
+</html>

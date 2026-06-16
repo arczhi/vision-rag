@@ -8,6 +8,10 @@ cd "$ROOT"
 
 # launchctl / GUI services usually start with a minimal PATH.
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+# Some desktop shells inherit proxy settings from GUI agents. qdrant-client does
+# not always bypass proxies for localhost unless NO_PROXY is explicit.
+export NO_PROXY="${NO_PROXY:-localhost,127.0.0.1,::1}"
+export no_proxy="${no_proxy:-$NO_PROXY}"
 
 if docker compose version >/dev/null 2>&1; then
   COMPOSE=(docker compose)

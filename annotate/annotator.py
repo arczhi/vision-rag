@@ -60,6 +60,27 @@ def _modalities_from_score_breakdown(score_breakdown: dict[str, float]) -> list[
     return sorted(keys, key=lambda k: (order.index(k) if k in order else len(order), k))
 
 
+def _aggregate_evidence_score_weights(evidence_samples: list[dict]) -> dict[str, float]:
+    for evidence in evidence_samples or []:
+        weights = evidence.get("score_weights")
+        if isinstance(weights, dict) and weights:
+            out: dict[str, float] = {}
+            for mode, value in weights.items():
+                try:
+                    weight = float(value)
+                except (TypeError, ValueError):
+                    continue
+                if np.isfinite(weight) and weight > 0:
+                    out[str(mode)] = weight
+            if out:
+                return out
+    return {
+        "visual": float(cfg.qdrant.visual_weight),
+        "caption": float(cfg.qdrant.caption_weight),
+        "transcript": float(cfg.qdrant.transcript_weight),
+    }
+
+
 @dataclass
 class Annotation:
     label: str
@@ -84,7 +105,9 @@ class Annotation:
             "end_time": round(self.end_time, 3),
             "duration": round(self.end_time - self.start_time, 3),
             "score": round(self.score, 4),
+            "selection_score": round(float(self.__dict__.get("selection_score")), 4) if self.__dict__.get("selection_score") is not None else round(self.score, 4),
             "score_breakdown": score_breakdown,
+            "score_weights": self.__dict__.get("score_weights") or _aggregate_evidence_score_weights(self.evidence_samples),
             "modalities": modalities,
             "thumbnail": self.thumbnail,
             "clip_indices": self.clip_indices,
@@ -707,6 +730,8 @@ class Annotator:
         a.__dict__["z_score"] = z
         score_breakdown = _aggregate_evidence_score_breakdown(a.evidence_samples)
         a.__dict__["score_breakdown"] = score_breakdown
+        a.__dict__["score_weights"] = _aggregate_evidence_score_weights(a.evidence_samples)
+        a.__dict__["selection_score"] = float(score)
         a.__dict__["modalities"] = _modalities_from_score_breakdown(score_breakdown)
         return a
 
@@ -720,6 +745,8 @@ class Annotator:
                 seen.add(key)
         score_breakdown = _aggregate_evidence_score_breakdown(cur.evidence_samples)
         cur.__dict__["score_breakdown"] = score_breakdown
+        cur.__dict__["score_weights"] = _aggregate_evidence_score_weights(cur.evidence_samples)
+        cur.__dict__["selection_score"] = float(cur.score)
         cur.__dict__["modalities"] = _modalities_from_score_breakdown(score_breakdown)
 
     def _assign_first_frame_thumbnails(self, meta, annotations: list[Annotation]) -> None:
@@ -776,11 +803,14 @@ class Annotator:
                 "kb_label": evidence.get("label"),
                 "kb_sample_id": evidence.get("sample_id"),
                 "kb_score": evidence.get("score"),
+                "kb_selection_score": evidence.get("selection_score") or evidence.get("score"),
+                "kb_retrieval_score": evidence.get("retrieval_score"),
                 "source_video_id": evidence.get("source_video_id") or ctx.get("video_id"),
                 "source_clip_index": ctx.get("clip_index"),
                 "source_start_time": ctx.get("start_time"),
                 "source_end_time": ctx.get("end_time"),
                 "score_breakdown": ctx.get("score_breakdown") or evidence.get("score_breakdown"),
+                "score_weights": evidence.get("score_weights"),
                 "candidate_reason": ctx.get("candidate_reason") or evidence.get("candidate_reason"),
                 "qwen_is_highlight": ctx.get("qwen_is_highlight"),
                 "qwen_score": ctx.get("qwen_score"),

@@ -474,6 +474,11 @@ class KBRetriever:
             names.caption: float(cfg.qdrant.caption_weight),
             names.transcript: float(cfg.qdrant.transcript_weight),
         }
+        alias_weights = {
+            "visual": float(weights.get(names.visual, 0.0)),
+            "caption": float(weights.get(names.caption, 0.0)),
+            "transcript": float(weights.get(names.transcript, 0.0)),
+        }
         per_vector_k = int(per_vector_k or max(int(top_k), int(top_k) * 2))
         for i, visual_vec in enumerate(query_vecs):
             query_by_lane: dict[str, np.ndarray] = {names.visual: visual_vec}
@@ -551,14 +556,29 @@ class KBRetriever:
             for pid, scores in lane_scores.items():
                 payload = payloads.get(pid) or {}
                 display_scores = display_lane_scores.get(pid) or scores
-                combined = sum(
+                retrieval_score = sum(
                     active_weights[lane] * float(scores.get(lane, 0.0))
                     for lane in active_weights
                 ) / denom
-                combined *= 1.0 + min(0.06, 0.03 * max(0, len(scores) - 1))
-                combined = min(0.999, combined)
+                retrieval_score *= 1.0 + min(0.06, 0.03 * max(0, len(scores) - 1))
+                retrieval_score = min(0.999, retrieval_score)
+
+                selection_weights = {
+                    lane: float(weights.get(lane, 0.0))
+                    for lane in display_scores
+                    if float(weights.get(lane, 0.0)) > 0
+                }
+                selection_denom = sum(selection_weights.values()) or 1.0
+                selection_score = sum(
+                    selection_weights[lane] * float(display_scores.get(lane, 0.0))
+                    for lane in selection_weights
+                ) / selection_denom
+                selection_score *= 1.0 + min(0.06, 0.03 * max(0, len(display_scores) - 1))
+                selection_score = min(0.999, selection_score)
                 row.append({
-                    "score": float(combined),
+                    "score": float(selection_score),
+                    "selection_score": float(selection_score),
+                    "retrieval_score": float(retrieval_score),
                     "sample_id": payload.get("sample_id"),
                     "label": payload.get("label"),
                     "source_video_id": payload.get("source_video_id"),
@@ -572,6 +592,11 @@ class KBRetriever:
                     "score_breakdown": {
                         aliases.get(lane, lane): round(float(score), 4)
                         for lane, score in display_scores.items()
+                    },
+                    "score_weights": {
+                        alias: round(float(weight), 4)
+                        for alias, weight in alias_weights.items()
+                        if float(weight) > 0
                     },
                     "modalities": [aliases.get(lane, lane) for lane in display_scores],
                 })

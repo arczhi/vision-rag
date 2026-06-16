@@ -369,7 +369,7 @@
       {
         id: "annotate",
         title: "高光标注",
-        note: "从选择/上传视频开始，到 hybrid/Qdrant 召回、本地 Qwen2-VL 重排序、被拒候选、结果页面。当前本地理解切分是 extra candidates，不再替代默认召回。",
+        note: "从选择/上传视频开始，到 hybrid/Qdrant 召回、highlight_example_v1 三模态样例匹配、本地 Qwen2-VL 重排序、结果页三模态评分展示。当前本地理解切分是 extra candidates，不替代默认召回。",
         stages: [
           {
             title: "入口与任务",
@@ -378,7 +378,7 @@
               {
                 id: "A00", type: "ui", title: "标注页参数",
                 summary: "选择视频或上传临时视频，设置高光样例表、阈值、z-score、Qwen 重排序、理解切分等标注参数。",
-                code: ["web/index.html #annotate", "api/server.py:1113", "api/server.py:1221"],
+                code: ["web/index.html #annotate", "api/server.py:1110", "api/server.py:1215"],
                 input: ["video_id 或上传文件", "kb_id=auto_llm", "threshold/z_threshold/top_k", "vl_rerank/use_local_vlm_segments"],
                 output: ["POST /annotate 或 /annotate/upload", "返回 task_id", "URL 写入 annot_task"],
                 change: ["这里适合改默认开关、参数命名、任务 URL 保留策略。"]
@@ -386,7 +386,7 @@
               {
                 id: "A01", type: "api", title: "任务派发",
                 summary: "TaskManager 后台执行，前端轮询 /tasks/{task_id}。",
-                code: ["api/server.py:1113", "api/server.py:1221", "api/tasks.py"],
+                code: ["api/server.py:1110", "api/server.py:1215", "api/tasks.py"],
                 input: ["AnnotateRequest", "临时视频路径或库内视频路径"],
                 output: ["task.status/progress/message/result/extra"],
                 change: ["这里适合加 trace_id、步骤明细、失败码、可恢复状态。"]
@@ -438,31 +438,31 @@
                 change: ["这里适合改抽帧策略、缓存、批量 embedding。"]
               },
               {
-                id: "A06", type: "store", title: "读取 highlight_example_v1 多向量",
-                summary: "读取针对高光 CLIP 表聚类/分类后的样例表；每个样例都有 visual/caption/transcript named vectors。",
-                code: ["annotate/annotator.py", "annotate/knowledge_base.py"],
-                input: ["kb_id=auto_llm", "当前 clip visual/caption/transcript query"],
-                output: ["高光类型", "样例 clip 引用", "score_breakdown"],
-                change: ["已改代码：highlight_example_v1 改为 named-vector 表，标注召回按多模态聚合。"],
-                flags: ["已修改"]
+                id: "A06", type: "store", title: "加载当前视频文本上下文",
+                summary: "按 video_id 从 highlight_clips 读取当前 clip 的 caption/qwen/transcript payload，再为 caption/transcript 构造 query 向量和可用性 mask。",
+                code: ["annotate/annotator.py:625", "annotate/annotator.py:643"],
+                input: ["video_id", "Transcript", "target_qdrant_by_clip"],
+                output: ["query_caption_vecs/mask", "query_transcript_vecs/mask", "kb_query_modalities"],
+                change: ["这里适合改临时视频无 Qdrant 上下文时的文本 query 来源、无描述/无台词占位策略。"],
+                flags: ["三模态"]
               },
               {
-                id: "A07", type: "risk", title: "已删除：回查 highlight_clips 多向量",
-                summary: "原来用当前 clip 去查 KB 样例引用的 highlight_clips visual/caption/transcript；现在从标注链路移除。",
-                code: ["annotate/annotator.py", "search/qdrant_retriever.py:840"],
-                input: ["旧：kb_samples + clip_vecs"],
-                output: ["旧：qdrant_context/score_breakdown"],
-                change: ["已改代码：annotator 不再调用 search_highlight_samples_multi。"],
-                flags: ["已删除"]
+                id: "A07", type: "store", title: "highlight_example_v1 多向量召回",
+                summary: "visual 始终参与召回；caption/transcript 在有可用文本时作为 active lane 参与 ANN，返回样例标签和证据。",
+                code: ["annotate/annotator.py:366", "annotate/knowledge_base.py:437"],
+                input: ["clip_vecs", "query_caption_vecs", "query_transcript_vecs", "top_k_per_clip"],
+                output: ["evidence_samples", "retrieval_score", "selection_score", "score_weights"],
+                change: ["这里适合改 visual/caption/transcript 权重、per_vector_k、KB 过滤条件。"],
+                flags: ["三模态"]
               },
               {
-                id: "A08", type: "risk", title: "已删除：legacy KB 兜底召回",
-                summary: "原来多模态回查失败时会 fallback 到旧单向量 KB 搜索；现在标注召回源统一为 highlight_example_v1。",
-                code: ["annotate/annotator.py", "annotate/knowledge_base.py:318"],
-                input: ["旧：clip_vecs"],
-                output: ["旧：legacy hits"],
-                change: ["已改代码：去掉回查失败后的 legacy fallback 分支。"],
-                flags: ["已删除"]
+                id: "A08", type: "logic", title: "补齐三模态展示分数",
+                summary: "search_kb 会取回命中样例的 named vectors，用 display query 计算缺失 lane 的相似度；因此 UI 可以展示 visual/caption/transcript 三个分数。",
+                code: ["annotate/knowledge_base.py:533", "annotate/knowledge_base.py:592"],
+                input: ["display_query_by_lane", "hit point vectors", "active lane scores"],
+                output: ["score_breakdown", "modalities", "selection_score"],
+                change: ["这里适合保证展示分数由后端给出，避免前端用 evidence 猜测或只显示召回到的 2 路。"],
+                flags: ["三模态", "刚修"]
               }
             ]
           },
@@ -472,10 +472,10 @@
             nodes: [
               {
                 id: "A09", type: "logic", title: "按 label 聚合分数",
-                summary: "每个 clip 内按高光类型汇总 highlight_example_v1 的多模态样例匹配结果，计算类型平均分。",
+                summary: "每个 clip 内按高光类型汇总 highlight_example_v1 命中；当前 hit.score 已是三模态 display 分数加权后的 selection_score。",
                 code: ["annotate/annotator.py:353"],
                 input: ["example matches", "labels filter"],
-                output: ["raw_pairs=(clip,highlight_type,avg,evidence)"],
+                output: ["raw_pairs=(clip,highlight_type,avg,evidence)", "evidence.score_breakdown/score_weights"],
                 change: ["这里适合改 mean/max/top-k 聚合方式。"]
               },
               {
@@ -489,20 +489,20 @@
               },
               {
                 id: "A11", type: "logic", title: "时间合并与长度过滤",
-                summary: "同 label 的重叠/相邻 clip 合并；再按 min_duration/max_duration 过滤。",
+                summary: "同 label 的重叠/相邻 clip 合并；合并证据时重新聚合 score_breakdown、score_weights、modalities。",
                 code: ["annotate/annotator.py:417"],
                 input: ["clip_label_score", "merge_gap", "duration limits"],
-                output: ["candidate annotations"],
+                output: ["candidate annotations", "聚合后的三模态分数"],
                 change: ["这里适合改过度合并、漏合并、短片段保留。"]
               },
               {
-                id: "A12", type: "risk", title: "已删除：帧级精化",
-                summary: "原来可用 label centroid 对候选段内帧再打分并改起止点；现在从标注运行链路和前端开关移除。",
-                code: ["annotate/annotator.py", "api/server.py", "web/index.html"],
-                input: ["旧：refine_frames/refine_fps/refine_min_seg"],
-                output: ["旧：refined annotations"],
-                change: ["已改代码：API 不再传入 refine 参数，前端不再展示帧级精化开关。"],
-                flags: ["已删除"]
+                id: "A12", type: "logic", title: "输出评分字段",
+                summary: "Annotation.as_dict 固定输出 score、selection_score、score_breakdown、score_weights、modalities，供结果页和反馈闭环消费。",
+                code: ["annotate/annotator.py:95", "annotate/annotator.py:731"],
+                input: ["candidate annotations", "evidence_samples"],
+                output: ["annotations[].selection_score", "annotations[].score_breakdown", "annotations[].modalities"],
+                change: ["这里适合新增解释字段、保留 retrieval_score、或统一前端/后端的分数口径。"],
+                flags: ["三模态"]
               },
             ]
           },
@@ -512,10 +512,10 @@
             nodes: [
               {
                 id: "A13", type: "model", title: "本地 Qwen2-VL 重排序",
-                summary: "对全部最终候选做 Qwen 判断，生成 is_highlight、score、caption、reason、tags、cut_advice，并融合重排。",
+                summary: "对最终候选做 Qwen 判断，传入 current_clip 和 reference_samples 上下文，生成 is_highlight、score、caption、reason、tags、cut_advice，并融合重排。",
                 code: ["annotate/annotator.py:481", "annotate/annotator.py:855", "annotate/highlight_understander.py:424"],
-                input: ["annotations", "current_clip qdrant_context", "reference sample summaries"],
-                output: ["vl_rank_score", "understanding", "rejected_annotations"],
+                input: ["annotations", "current_clip qdrant_context", "reference sample summaries", "score_breakdown"],
+                output: ["vl_rank_score", "understanding", "rejected_annotations", "vl_rejected"],
                 change: ["这里适合改 prompt、重排公式、拒绝候选展示。"]
               },
               {
@@ -529,11 +529,12 @@
               },
               {
                 id: "A15", type: "ui", title: "结果页与反馈",
-                summary: "结果写入 task.result，前端用 annot_task 恢复；用户可播放、接受/拒绝反馈。",
-                code: ["web/index.html renderAnnotations", "api/server.py:1500", "annotate/feedback_store.py"],
-                input: ["annotations", "rejected_annotations", "timings"],
-                output: ["结果卡片", "feedback/highlight"],
-                change: ["这里适合改结果分组、字段解释、反馈入库规则。"]
+                summary: "结果写入 task.result，前端用 annot_task 恢复；结果卡片展示 selection_score 和 visual/caption/transcript 三模态 score chips。",
+                code: ["web/index.html:3026", "web/index.html:3090", "web/index.html:4398", "api/server.py:1485"],
+                input: ["annotations", "rejected_annotations", "timings", "score_breakdown"],
+                output: ["结果卡片", "modal-scores", "feedback/highlight"],
+                change: ["这里适合改三模态中文标签、排序、tooltip、反馈入库规则。"],
+                flags: ["三模态"]
               }
             ]
           }
@@ -542,7 +543,7 @@
       {
         id: "ingest",
         title: "视频入库",
-        note: "入库把视频切成 clip，生成 visual/caption/transcript 三路向量，写入 Qdrant highlight_clips。注意：入库里的本地/云端切分仍是替代默认切片，用于构建更高质量主索引。",
+        note: "入库把视频切成 clip，生成 visual/caption/transcript 三路 named vectors，写入 Qdrant highlight_clips。Qwen2-VL clip 理解由 QDRANT_ENABLE_VLM_CAPTION 控制；入库里的本地/云端切分仍是替代默认切片，用于构建更高质量主索引。",
         stages: [
           {
             title: "入口",
@@ -569,16 +570,16 @@
             nodes: [
               { id: "I07", type: "model", title: "视觉向量", summary: "CLIPEncoder 只看 clip 画面帧，输出可做视觉相似度检索的 visual_vec；它不生成剧情文字。", code: ["ingest/pipeline.py:85", "ingest/embedding.py"], input: ["Clip.frames"], output: ["visual_vec"], change: ["改模型、batch、pooling、MPS/CPU。"] },
               { id: "I08", type: "model", title: "字幕/ASR 文本", summary: "TranscriptProvider 读取或识别原视频对白，产出可读的 dialogue 文本和来源；这是文本事实层。", code: ["ingest/pipeline.py:75", "annotate/transcript.py"], input: ["video_path"], output: ["dialogue", "transcript_source"], change: ["改 ASR、字幕缓存、最大文本长度。"] },
-              { id: "I09", type: "model", title: "Qwen2-VL clip 理解", summary: "Qwen2-VL 同时看画面和对白，生成 caption/reason/tags/cut_advice/qwen_score；这是语义理解层，比 I07 慢但更像剧情判断。", code: ["ingest/pipeline.py:116", "annotate/highlight_understander.py:424"], input: ["clip frames", "dialogue"], output: ["understanding", "qwen_score", "qwen_is_highlight"], change: ["改入库 prompt、是否启用 QDRANT_ENABLE_VLM_CAPTION。"], flags: ["慢"] },
-              { id: "I10", type: "model", title: "caption/字幕向量", summary: "把 I09 的 caption_text 和 I08 的 dialogue/transcript_text 分别 encode_texts 成向量；transcript 在这里不是新字幕，而是字幕文本的检索向量 lane。", code: ["ingest/pipeline.py:89"], input: ["caption_text", "transcript_text"], output: ["caption_vec", "transcript_vec"], change: ["改文本构造、无台词占位、模型维度。"] }
+              { id: "I09", type: "model", title: "Qwen2-VL clip 理解", summary: "Qwen2-VL 同时看画面和对白，生成 caption/reason/tags/cut_advice/qwen_score；由 QDRANT_ENABLE_VLM_CAPTION 控制，关闭时仍会构造文本占位。", code: ["ingest/pipeline.py:91", "ingest/pipeline.py:123", "config.py:111"], input: ["clip frames", "dialogue", "QDRANT_ENABLE_VLM_CAPTION"], output: ["understanding", "qwen_score", "qwen_is_highlight"], change: ["改入库 prompt、是否默认启用 VLM caption、每段最大帧数。"], flags: ["慢"] },
+              { id: "I10", type: "model", title: "caption/字幕向量", summary: "把 caption_text 和 dialogue/transcript_text 分别 encode_texts 成向量；caption lane 混合画面理解与台词，transcript lane 保留字幕/ASR 文本。", code: ["ingest/pipeline.py:92", "ingest/pipeline.py:94", "ingest/pipeline.py:155"], input: ["caption_text", "transcript_text"], output: ["caption_vec", "transcript_vec"], change: ["改文本构造、无台词占位、模型维度。"], flags: ["三模态"] }
             ]
           },
           {
             title: "Qdrant 写入",
             desc: "主索引 highlight_clips。",
             nodes: [
-              { id: "I11", type: "store", title: "构造 QdrantClipRecord", summary: "每个 clip 带 visual/caption/transcript 三路向量和 payload。", code: ["ingest/pipeline.py:92", "search/qdrant_retriever.py:113"], input: ["vecs", "payload"], output: ["QdrantClipRecord"], change: ["改 payload 字段、向量名、clip_index 语义。"] },
-              { id: "I12", type: "store", title: "insert highlight_clips", summary: "用 point_id=collection+video_id+clip_index 写入 Qdrant named vectors。", code: ["search/qdrant_retriever.py:252", "search/qdrant_retriever.py:311"], input: ["records"], output: ["Qdrant points"], change: ["改 upsert/delete、collection schema、命名向量。"] },
+              { id: "I11", type: "store", title: "构造 QdrantClipRecord", summary: "每个 clip 带 visual/caption/transcript 三路向量和 payload；payload 保存 caption_text、transcript_text、understanding、qwen_* 字段。", code: ["ingest/pipeline.py:96", "search/qdrant_retriever.py:127"], input: ["vecs", "payload", "understanding"], output: ["QdrantClipRecord"], change: ["改 payload 字段、向量名、clip_index 语义。"], flags: ["三模态"] },
+              { id: "I12", type: "store", title: "insert highlight_clips", summary: "用 point_id=collection+video_id+clip_index 写入 Qdrant named vectors：highlight_visual/caption/transcript_*。", code: ["search/qdrant_retriever.py:321", "search/qdrant_retriever.py:346"], input: ["records"], output: ["Qdrant points", "vector_names payload"], change: ["改 upsert/delete、collection schema、命名向量。"], flags: ["三模态"] },
               { id: "I13", type: "api", title: "入库结果", summary: "返回 video_id、num_clips、used_local_vlm_segments 等；/videos 和 /clips 从 Qdrant 读。", code: ["api/server.py:537", "api/server.py:190", "api/server.py:207"], input: ["IngestStats"], output: ["task.result", "videos/clips API"], change: ["改列表展示、健康检查、重建任务。"] }
             ]
           }
@@ -587,7 +588,7 @@
       {
         id: "search",
         title: "视频检索",
-        note: "文本搜索走 visual/caption/transcript 三路 Qdrant 召回并融合，短中文 query 还有词面召回；图片搜索只走 visual lane，再进入 reranker/merge。",
+        note: "文本搜索走 visual/caption/transcript 三路 Qdrant 召回并按 0.30/0.45/0.25 默认权重融合，短中文 query 还有词面召回；图片搜索只走 visual lane，再进入 reranker/merge。",
         stages: [
           {
             title: "入口",
@@ -609,9 +610,9 @@
             title: "Qdrant 粗召回",
             desc: "从 highlight_clips 拿候选。",
             nodes: [
-              { id: "S04", type: "store", title: "search_multi 多路召回", summary: "分别 query named vectors，再按配置权重融合：visual/caption/transcript。", code: ["search/pipeline.py:82", "search/qdrant_retriever.py:620"], input: ["query_vectors", "weights", "per_vector_k"], output: ["ClipHit[]", "score_breakdown"], change: ["改权重、per lane top_k、是否用 RRF。"] },
-              { id: "S05", type: "logic", title: "短 query 词面召回", summary: "文本搜索会扫描 payload 文本，给明确命中的 caption/transcript/qwen 字段一个 lexical floor。", code: ["search/qdrant_retriever.py:657", "search/qdrant_retriever.py:720"], input: ["query_text", "payload text fields"], output: ["lexical lane score"], change: ["改短词规则、字段权重、是否替代向量。"], flags: ["易影响相关度"] },
-              { id: "S06", type: "logic", title: "融合排序", summary: "按 active lane 权重求 combined score，多路命中有少量覆盖奖励。", code: ["search/qdrant_retriever.py:673"], input: ["lane_scores", "lexical_score"], output: ["coarse hits"], change: ["改融合公式、score floor、覆盖奖励。"] }
+              { id: "S04", type: "store", title: "search_multi 多路召回", summary: "文本 query 同一个向量分别查 visual/caption/transcript named vectors，再按配置权重融合。", code: ["search/pipeline.py:82", "search/qdrant_retriever.py:665", "config.py:108"], input: ["query_vectors", "weights", "per_vector_k"], output: ["ClipHit[]", "score_breakdown"], change: ["改权重、per lane top_k、是否用 RRF。"], flags: ["三模态"] },
+              { id: "S05", type: "logic", title: "短 query 词面召回", summary: "文本搜索会扫描 payload 文本，给明确命中的 caption/transcript/qwen 字段一个 lexical floor；很短中文 query 命中足够多时可优先词面候选。", code: ["search/qdrant_retriever.py:716", "search/qdrant_retriever.py:759"], input: ["query_text", "payload text fields"], output: ["lexical lane score"], change: ["改短词规则、字段权重、是否替代向量。"], flags: ["易影响相关度"] },
+              { id: "S06", type: "logic", title: "融合排序", summary: "按 active lane 权重求 combined score，词面命中提供分数地板，多路命中有少量覆盖奖励；lane 原始分数保留到 score_breakdown。", code: ["search/qdrant_retriever.py:704", "search/qdrant_retriever.py:851"], input: ["lane_scores", "lexical_score"], output: ["coarse hits", "score_breakdown"], change: ["改融合公式、score floor、覆盖奖励。"] }
             ]
           },
           {
@@ -620,7 +621,7 @@
             nodes: [
               { id: "S07", type: "model", title: "Reranker", summary: "rerank=false 直接返回；merge/clip 用 CLIP 二次打分并聚合；internvl 模式走 MLX Qwen2-VL/多模态打分。", code: ["search/pipeline.py:106", "search/reranker.py:44"], input: ["query", "coarse hits"], output: ["ClipResult[]"], change: ["改 merge_gap、Qwen rerank prompt、图片模式降级。"] },
               { id: "S08", type: "logic", title: "相邻片段聚合", summary: "把同视频相邻/重叠 hits 合并成更完整结果，带 clip_indices 和 hits。", code: ["search/reranker.py"], input: ["reranked hits"], output: ["ClipResult"], change: ["改合并跨度、score 汇总、重复结果。"] },
-              { id: "S09", type: "ui", title: "检索结果预览", summary: "前端展示片段、score、缩略图，点击打开视频预览。", code: ["web/index.html renderSearchResults", "api/server.py stream routes"], input: ["task.result.results"], output: ["结果卡片", "preview modal"], change: ["改解释字段、score breakdown、播放错误。"] }
+              { id: "S09", type: "ui", title: "检索结果预览", summary: "前端展示片段、score、缩略图，点击打开视频预览；检索结果可继续扩展展示 ClipHit 的 score_breakdown。", code: ["web/index.html renderSearchResults", "api/server.py stream routes"], input: ["task.result.results"], output: ["结果卡片", "preview modal"], change: ["改解释字段、score_breakdown、播放错误。"] }
             ]
           }
         ]
@@ -628,22 +629,22 @@
       {
         id: "kb",
         title: "高光知识库",
-        note: "高光标注依赖 highlight_example_v1；它从高光 CLIP 表中挑候选、聚类、命名、去重，形成可复用的分类聚合样例表。",
+        note: "高光标注依赖 highlight_example_v1；它从 highlight_clips 的 Qwen 高光候选中挑样例、可选 Qwen2-VL review、聚类、命名、去重，写成 visual/caption/transcript 三路 named-vector 样例表。",
         stages: [
           {
             title: "候选来源",
             desc: "从入库时的 Qwen 理解结果里找潜在高光。",
             nodes: [
-              { id: "K00", type: "api", title: "auto-kb/run", summary: "启动自动构建高光库任务，可 force_full 清空后重建。", code: ["api/server.py:1934"], input: ["kb_id", "candidate_mode", "min_qwen_score"], output: ["task_id"], change: ["改默认候选策略、重建方式。"] },
-              { id: "K01", type: "store", title: "扫描 highlight_clips", summary: "读取 Qdrant payload 与 visual vector，按 qwen_is_highlight/qwen_score/tags 选候选。", code: ["search/qdrant_retriever.py:468"], input: ["highlight_clips points"], output: ["candidate rows"], change: ["改 strict/broad 策略、负向标签过滤。"] },
-              { id: "K02", type: "model", title: "Qwen2-VL 精判候选", summary: "可选对候选再次结合多模态上下文判断保留/拒绝。", code: ["api/server.py:1951"], input: ["rows_for_candidates"], output: ["vlm_stats", "refined_rows"], change: ["改 refine limit、prompt、错误统计。"] }
+              { id: "K00", type: "api", title: "auto-kb/run", summary: "启动自动构建高光库任务；默认 candidate_mode=review、vlm_refine=true、vlm_refine_limit=240，可 force_full 清空后重建。", code: ["api/server.py:1886", "api/server.py:1919"], input: ["kb_id", "candidate_mode", "min_qwen_score", "vlm_refine"], output: ["task_id"], change: ["改默认候选策略、重建方式、夜间批处理入口。"] },
+              { id: "K01", type: "store", title: "扫描 highlight_clips", summary: "读取 Qdrant payload 与 visual vector，按 qwen_is_highlight/qwen_score/tags/candidate_mode 选候选，并带回 caption/transcript 文本。", code: ["search/qdrant_retriever.py:495"], input: ["highlight_clips points", "candidate_mode", "target_candidates", "per_video_limit"], output: ["candidate rows"], change: ["改 strict/broad/review 策略、负向标签过滤、每视频上限。"] },
+              { id: "K02", type: "model", title: "Qwen2-VL review 精判", summary: "默认会对候选结合当前 clip 多模态上下文再次判断，review 模式下本地 VLM 不可用则不写库。", code: ["api/server.py:1929", "api/server.py:1983"], input: ["rows_for_candidates", "vlm_refine_limit", "vlm_min_score"], output: ["vlm_stats", "refined_rows", "vlm_filtered"], change: ["改 refine limit、prompt、不可用时的降级策略。"], flags: ["慢"] }
             ]
           },
           {
             title: "聚类与命名",
             desc: "把候选整理成可复用标签样例。",
             nodes: [
-              { id: "K03", type: "model", title: "视觉+文本融合向量", summary: "候选描述 encode_texts，与视觉向量按 TEXT_WEIGHT 融合并归一化。", code: ["annotate/auto_kb.py:47"], input: ["visual_vec", "description"], output: ["fused vectors"], change: ["改融合权重、描述字段。"] },
+              { id: "K03", type: "model", title: "视觉+文本融合向量", summary: "caption_text encode_texts 得到 caption lane；transcript_text encode_texts 得到 transcript lane；聚类时 visual 与 caption 按 text_weight 融合。", code: ["annotate/auto_kb.py:566", "annotate/auto_kb.py:579"], input: ["visual_vec", "caption_text", "transcript_text"], output: ["caption_vecs", "transcript_vecs", "fused vectors"], change: ["改融合权重、描述字段、字幕缺失兜底。"], flags: ["三模态"] },
               { id: "K04", type: "logic", title: "KMeans/HDBSCAN 聚类", summary: "默认 KMeans K≈sqrt(N)，孤立小簇标噪声；失败才 HDBSCAN。", code: ["annotate/auto_kb.py:62"], input: ["fused vectors"], output: ["cluster labels"], change: ["改 K、min cluster、噪声策略。"] },
               { id: "K05", type: "model", title: "本地 Qwen2-VL 簇命名", summary: "每簇取描述和缩略图，让本地 Qwen2-VL 输出 4-8 字抽象标签。", code: ["annotate/auto_kb.py:234", "annotate/highlight_understander.py:542"], input: ["cluster members"], output: ["label name"], change: ["改命名 prompt、参考标签体系。"] }
             ]
@@ -652,9 +653,49 @@
             title: "写入与消费",
             desc: "KB 样例进入标注召回。",
             nodes: [
-              { id: "K06", type: "store", title: "写 highlight_example_v1 多向量", summary: "面向高光 CLIP 的分类聚合表：每个代表样例写 visual/caption/transcript 三路 named vectors。", code: ["api/server.py:/auto-kb/run", "annotate/auto_kb.py", "annotate/knowledge_base.py"], input: ["高光 clip candidates", "cluster labels", "caption/transcript text"], output: ["highlight_example_v1 named vectors"], change: ["已改代码：自动高光归纳写入三路 named vectors，不再是单向量样例表。"], flags: ["已修改"] },
-              { id: "K07", type: "store", title: "标注消费样例表", summary: "高光标注读取 highlight_example_v1，把当前 clip 的 visual/caption/transcript 与样例表多路召回并聚合。", code: ["annotate/annotator.py", "annotate/knowledge_base.py"], input: ["highlight_example_v1 named vectors"], output: ["高光标注 evidence_samples", "score_breakdown"], change: ["已改代码：标注召回源统一为 highlight_example_v1 多模态样例表。"], flags: ["已修改"] },
-              { id: "K08", type: "ui", title: "KB 管理与反馈闭环", summary: "前端列 KB、样例、重命名标签；标注反馈可作为后续样例来源。", code: ["api/server.py:977", "api/server.py:1925", "api/server.py:1500"], input: ["用户反馈", "KB samples"], output: ["label_counts", "feedback rows"], change: ["改人工审核、接受/拒绝如何反哺 KB。"] }
+              { id: "K06", type: "store", title: "写 highlight_example_v1 多向量", summary: "面向高光 clip 的分类聚合表：每个代表样例写 visual/caption/transcript 三路 named vectors，并保存 caption_text/transcript_text。", code: ["annotate/auto_kb.py:465", "annotate/knowledge_base.py:308"], input: ["高光 clip candidates", "cluster labels", "caption_vecs", "transcript_vecs"], output: ["highlight_example_v1 named vectors", "label_count"], change: ["这里适合改 sample_id 幂等、force_full 重建、三路向量降级策略。"], flags: ["三模态"] },
+              { id: "K07", type: "store", title: "标注消费样例表", summary: "高光标注读取 highlight_example_v1，返回 evidence_samples、score_breakdown、score_weights、modalities、selection_score。", code: ["annotate/annotator.py:366", "annotate/knowledge_base.py:437", "annotate/knowledge_base.py:592"], input: ["highlight_example_v1 named vectors", "current clip queries"], output: ["evidence_samples", "score_breakdown", "score_weights", "selection_score"], change: ["这里适合统一 KB 召回分和 UI 展示分口径。"], flags: ["三模态"] },
+              { id: "K08", type: "ui", title: "KB 管理与反馈闭环", summary: "前端列 KB、样例、重命名标签；标注接受/拒绝反馈进入 SQLite，当前主要用于后续偏好排序/数据集，尚未自动回写 KB。", code: ["api/server.py:1485", "api/server.py:1850", "api/server.py:1910"], input: ["用户反馈", "KB samples", "label_map"], output: ["label_counts", "feedback rows", "renamed labels"], change: ["改人工审核、接受/拒绝如何反哺 KB、标签治理。"] }
+            ]
+          }
+        ]
+      },
+      {
+        id: "ops",
+        title: "运行维护",
+        note: "当前实现已经有 in-memory 异步任务、GPU 串行锁、Qdrant/本地 VLM 重建接口；生产级夜间批处理还需要补持久队列、调度器、任务锁、失败重试和可观测性。",
+        stages: [
+          {
+            title: "服务启动",
+            desc: "一次加载模型和依赖。",
+            nodes: [
+              { id: "O00", type: "api", title: "FastAPI lifespan", summary: "启动时加载 encoder、VideoProcessor、QdrantRetriever、SearchPipeline、KnowledgeBase、Annotator、LocalHighlightUnderstander。", code: ["api/server.py:57", "api/server.py:73"], input: ["config.py", "模型缓存", "Qdrant"], output: ["state.* 单例", "Qdrant collections"], change: ["改模型预热、依赖 readiness、启动失败策略。"] },
+              { id: "O01", type: "api", title: "in-memory TaskManager", summary: "TaskManager 用 ThreadPoolExecutor 保存 pending/running/done/failed/canceled 状态；进程重启后任务状态丢失。", code: ["api/tasks.py:1", "api/tasks.py:43"], input: ["submit(kind, fn, args)"], output: ["task_id", "task.progress", "task.extra"], change: ["生产级应替换为持久任务表 + worker，支持恢复、重试、并发控制。"], flags: ["生产风险"] }
+            ]
+          },
+          {
+            title: "GPU 串行",
+            desc: "保护显卡资源。",
+            nodes: [
+              { id: "O02", type: "logic", title: "embed_lock 串行 GPU 阶段", summary: "入库、标注、维护重建、auto-kb review 的 decode/embedding/Qwen2-VL 阶段都进入 state.embed_lock，避免多个重任务同时抢 GPU。", code: ["api/server.py:89", "api/server.py:508", "api/server.py:1155", "api/server.py:1990"], input: ["后台任务", "NVIDIA GPU"], output: ["串行执行的重计算段"], change: ["生产级应改为队列 worker 并明确 GPU 并发槽位、超时、抢占和排队状态。"], flags: ["资源约束"] },
+              { id: "O03", type: "risk", title: "夜间批处理缺口", summary: "代码里已有可取消的批量重建接口，但没有持久化日程、每天固定时间触发、断点续跑或批次审计表。", code: ["api/server.py:1561", "api/server.py:1664"], input: ["data/videos", "limit/include_tmp/clear flags"], output: ["rebuild task result"], change: ["新增 schedule_run/batch_job 表、cron 或 APScheduler 触发、每视频状态机、失败重试。"], flags: ["待工程化"] }
+            ]
+          },
+          {
+            title: "重建入口",
+            desc: "手动或计划任务可复用。",
+            nodes: [
+              { id: "O04", type: "api", title: "Qdrant 主索引重建", summary: "/maintenance/rebuild-qdrant-ingest 会按 data/videos 批量重建 highlight_clips 三模态 named-vector 主索引。", code: ["api/server.py:1561"], input: ["include_tmp", "limit", "clear_video_embeddings", "skip_existing"], output: ["rebuild_qdrant_ingest task", "clips/results/errors"], change: ["接入夜间批处理，增加每视频 checkpoint 和结构化错误。"] },
+              { id: "O05", type: "api", title: "本地 VLM 切分重建", summary: "/maintenance/rebuild-local-vlm-ingest 用本地 Qwen2-VL 重新切分 data/videos，并可清理 llm_highlights/video embeddings。", code: ["api/server.py:1664"], input: ["include_tmp", "limit", "clear flags"], output: ["rebuild_local_vlm_ingest task"], change: ["接入 GPU 队列、缓存复用、失败视频跳过策略。"] },
+              { id: "O06", type: "api", title: "高光 KB 重建", summary: "/auto-kb/run 从主索引挑候选、review、聚类、命名，写 highlight_example_v1；适合作为主索引重建后的批处理步骤。", code: ["api/server.py:1919"], input: ["candidate_mode=review", "force_full", "only_uncategorized"], output: ["auto_kb task", "label_count", "vlm_refine"], change: ["在批处理编排里加依赖关系：入库完成后再跑 auto-kb，再跑标注。"] }
+            ]
+          },
+          {
+            title: "可观测性",
+            desc: "让夜间任务可追踪。",
+            nodes: [
+              { id: "O07", type: "risk", title: "状态与日志待持久化", summary: "当前 task.extra 有阶段信息，但只在内存里；生产批处理需要 batch_id、video_id、step、attempt、started_at/finished_at、error_code、traceback。", code: ["api/tasks.py:20", "api/server.py task.extra"], input: ["task progress", "每视频步骤"], output: ["可查询任务审计"], change: ["新增 SQLite/Postgres 任务表、结构化 JSON log、/jobs 查询 API。"], flags: ["待工程化"] },
+              { id: "O08", type: "ui", title: "运维控制台", summary: "现有前端已能发起入库/标注/auto-kb，但还没有批次列表、队列深度、GPU 占用、失败重试、夜间计划展示。", code: ["web/index.html", "web/flow-map.html"], input: ["jobs API", "tasks API"], output: ["批处理看板", "重试/取消/恢复按钮"], change: ["新增生产运维页，把这个 flow-map 变成可点击的真实任务状态图。"], flags: ["待工程化"] }
             ]
           }
         ]
@@ -695,7 +736,9 @@
       const badges = [];
       badges.push(`<span class="mini">${escapeHtml(node.type)}</span>`);
       for (const flag of node.flags || []) {
-        const cls = flag.includes("修") || flag.includes("新") ? "new" : (flag.includes("慢") || flag.includes("替代") ? "warn" : "risk");
+        const cls = flag.includes("修") || flag.includes("新") || flag.includes("三模态")
+          ? "new"
+          : (flag.includes("慢") || flag.includes("替代") || flag.includes("资源") ? "warn" : "risk");
         badges.push(`<span class="mini ${cls}">${escapeHtml(flag)}</span>`);
       }
       return badges.join("");

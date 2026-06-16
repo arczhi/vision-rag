@@ -3030,6 +3030,39 @@ const MODALITY_LABELS = {
   text: "文本",
   qwen: "Qwen",
 };
+const DEFAULT_MODALITY_WEIGHTS = {
+  visual: 0.3,
+  caption: 0.45,
+  transcript: 0.25,
+};
+function scoreWeightsFor(item) {
+  const raw = item && typeof item.score_weights === "object" ? item.score_weights : null;
+  return raw && Object.keys(raw).length ? raw : DEFAULT_MODALITY_WEIGHTS;
+}
+function estimatedSelectionScore(item) {
+  const breakdown = item && typeof item.score_breakdown === "object" ? item.score_breakdown : null;
+  if (!breakdown) return null;
+  const weights = scoreWeightsFor(item);
+  let weighted = 0;
+  let denom = 0;
+  let lanes = 0;
+  Object.entries(breakdown).forEach(([mode, value]) => {
+    const score = finiteNumber(value);
+    const weight = finiteNumber(weights[mode]);
+    if (score == null || weight == null || weight <= 0) return;
+    weighted += score * weight;
+    denom += weight;
+    lanes += 1;
+  });
+  if (!denom || !lanes) return null;
+  const coverageBoost = 1 + Math.min(0.06, 0.03 * Math.max(0, lanes - 1));
+  return Math.min(0.999, (weighted / denom) * coverageBoost);
+}
+function evidenceDisplayScore(evidence) {
+  return finiteNumber(evidence?.selection_score)
+    ?? estimatedSelectionScore(evidence)
+    ?? finiteNumber(evidence?.score);
+}
 function annotationModalityScores(annot) {
   const byMode = {};
   const addBreakdown = (breakdown) => {
@@ -4352,18 +4385,22 @@ function renderAnnotations(j) {
       ? `<div class="thumb" style="background-image:url(${escapeHtml(thumbUrl)})"></div>`
       : `<div class="thumb">等待封面</div>`;
     const evidenceList = (a.evidence_samples || []).slice(0, 3)
-      .map(e => `${escapeHtml(e.label)}: ${e.score.toFixed(3)}${e.note ? ` (${escapeHtml(e.note.slice(0, 30))})` : ""}`)
+      .map(e => {
+        const s = evidenceDisplayScore(e);
+        return `${escapeHtml(e.label)}: ${s != null ? s.toFixed(3) : "—"}${e.note ? ` (${escapeHtml(e.note.slice(0, 30))})` : ""}`;
+      })
       .join("  •  ");
     const understandingHtml = renderUnderstanding(a.understanding);
     const dialogueHtml = a.dialogue
       ? `<div class="dialogue" title="${escapeHtml(a.dialogue)}"><b>台词</b> ${escapeHtml(a.dialogue.slice(0, 180))}</div>`
       : "";
     const mainScore = finiteNumber(a.score);
+    const selectionScore = finiteNumber(a.selection_score) ?? estimatedSelectionScore(a);
     const rankScore = finiteNumber(a.vl_rank_score);
     const baseScore = finiteNumber(a.base_score);
     const vlScore = finiteNumber(a.vl_score);
     const hasRankScore = rankScore != null;
-    const selectedScore = baseScore ?? mainScore;
+    const selectedScore = selectionScore ?? baseScore ?? mainScore;
     const scoreText = hasRankScore
       ? `重排 ${rankScore.toFixed(4)}`
       : `入选分数 ${selectedScore != null ? selectedScore.toFixed(4) : "—"}`;
